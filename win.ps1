@@ -1,3 +1,13 @@
+# ============================================================================
+# 🚀 THE WINDOWS DOTFILES INSTALLER
+# ============================================================================
+# This script installs all professional tools on Windows via WinGet, sets up 
+# Nerd Fonts, and prepares your environment for the modular dotfiles.
+# 
+# One-liner (Run in Admin PowerShell):
+# Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/tfernd/dotfiles/main/win.ps1'))
+# ============================================================================
+
 $tools = @(
     "Starship.Starship", "ajeetdsouza.zoxide",
     "sharkdp.bat", "eza-community.eza", "BurntSushi.ripgrep.MSVC",

@@ -36,11 +36,17 @@ dark_grey = "#313244"
 [os]
 disabled = false
 style = "bg:magenta fg:white"
-format = "[](magenta)[$symbol]($style)[](fg:magenta bg:cyan)"
+format = "[](magenta)[$symbol]($style)[](fg:magenta bg:cyan)"
+
+[username]
+show_always = true
+style_user = "bg:cyan fg:black"
+style_root = "bg:cyan fg:black"
+format = "[$user]($style)[](fg:cyan bg:blue)"
 
 [directory]
 style = "bg:blue fg:white"
-format = "[  $path ]($style)[](fg:blue bg:yellow)"
+format = "[ $path]($style)[](fg:blue bg:yellow)"
 truncation_length = 2
 truncation_symbol = "…/"
 truncate_to_repo = true
@@ -49,23 +55,23 @@ use_os_path_sep = false
 [git_branch]
 style = "bg:yellow fg:black"
 symbol = ""
-format = "[ $symbol $branch(:$remote_branch) ]($style)[](fg:yellow) "
+format = "[ $symbol $branch(:$remote_branch)]($style)[](fg:yellow bg:none) "
 always_show_remote = false
 only_attached = false
 
 [git_status]
 style = "white"
 format = '([\[ $all_status$ahead_behind \]]($style) )'
-conflicted = "[⚔️${count}](red) "
+conflicted = "[⨳${count}](red) "
 ahead = "[⇡${count}](green) "
 behind = "[⇣${count}](red) "
 diverged = "⇕ [⇡${ahead_count}](green) [⇣${behind_count}](red) "
 untracked = "[?${count}](cyan) "
 staged = "[+${count}](green) "
 modified = "[!${count}](yellow) "
-renamed = "[»${count}](magenta) "
+renamed = "[↦${count}](magenta) "
 deleted = "[✘${count}](red) "
-stashed = "[≡${count}](grey) "
+stashed = "[⛶${count}](grey) "
 ignore_submodules = true
 
 [git_metrics]
@@ -88,19 +94,13 @@ format = 'via [$symbol ($version) (\($virtualenv\) )]($style)'
 disabled = false
 time_format = "%R"
 style = "bg:dark_grey fg:white"
-format = "[](dark_grey)[  $time ]($style)[ ](dark_grey)"
+format = "[](dark_grey)[$time]($style)[](fg:dark_grey) "
 
 [cmd_duration]
 min_time = 100
 format = "took [$duration]($style) "
 style = "bold grey"
 show_milliseconds = true
-
-[username]
-show_always = true
-style_user = "bg:cyan fg:black"
-style_root = "bg:cyan fg:black"
-format = "[  $user ]($style)[](fg:cyan bg:blue)"
 
 [package]
 symbol = "📦"

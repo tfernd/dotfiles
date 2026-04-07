@@ -2,7 +2,7 @@
 if [ "$_ZOXIDE_LOADED" = "true" ]; then
     return
 fi
-export _ZOXIDE_LOADED=true
+_ZOXIDE_LOADED=true
 
 if [ "$HAS_ZOXIDE" = "true" ]; then
     ZOXIDE_CACHE="$HOME/.cache/zoxide_init.$CURRENT_SHELL"

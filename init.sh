@@ -16,6 +16,9 @@ else
 fi
 
 # --- Shell Optimization & Deduplication ---
+# Purge inherited include guards from environment (breaks inheritance cycle)
+unset _PATHS_LOADED _ZOXIDE_LOADED _PROMPT_LOADED 2>/dev/null
+
 if [ -n "$ZSH_VERSION" ]; then
     # Prevent duplicate entries in hook arrays
     typeset -gU path fpath cdpath

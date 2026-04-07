@@ -3,7 +3,7 @@
 if [ "$_PATHS_LOADED" = "true" ]; then
     return
 fi
-export _PATHS_LOADED=true
+_PATHS_LOADED=true
 
 # Windows user profile HOME detection
 if [ -n "$USERPROFILE" ] && [ -z "$HOME" -o "$HOME" = "/" ]; then

@@ -6,7 +6,9 @@
 [ "$HAS_LAZYGIT" = "true" ] && alias lg="lazygit"
 
 alias gs='git status -sb'
+alias ga='git add --all'
 alias gam='git commit --amend --no-edit'
+alias gpf='git push --force-with-lease'
 alias gu='git reset --soft HEAD~1'
 
 # Beautiful git log

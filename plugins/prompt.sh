@@ -3,7 +3,7 @@
 if [ "$_PROMPT_LOADED" = "true" ]; then
     return
 fi
-export _PROMPT_LOADED=true
+_PROMPT_LOADED=true
 
 # --- Oh My Zsh ---
 if [ "$CURRENT_SHELL" = "zsh" ] && [ -d "$HOME/.oh-my-zsh" ]; then
@@ -45,6 +45,7 @@ if [ "$HAS_STARSHIP" = "true" ]; then
         starship init "$CURRENT_SHELL" > "$_STAR_CACHE"
         echo "#hash:$_S_HASH" >> "$_STAR_CACHE"
     fi
+    [ -n "$ZSH_VERSION" ] && setopt prompt_subst
     source "$_STAR_CACHE"
 fi
 

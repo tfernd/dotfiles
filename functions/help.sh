@@ -54,8 +54,10 @@ function myhelp() {
     echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
     [ "$HAS_LAZYGIT" = "true" ] && print_cmd "lg"  "Open Lazygit TUI (Visual Git)"
     print_cmd "gs, gl" "Git status (short), Git log (beautiful graph)"
+    print_cmd "ga"     "Git add all changes"
     print_cmd "gu, gr" "Git Undo (reset HEAD~1), Git Redo (time machine)"
     print_cmd "gam"    "Git Amend (add to last commit quietly)"
+    print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
     if [ "$HAS_GH" = "true" ]; then
         print_cmd "pr, prs" "Create a GitHub PR, List open PRs"
     fi
