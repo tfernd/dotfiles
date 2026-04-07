@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# ============================================================================
+# HELP MENU & CHEAT SHEETS
+# ============================================================================
+
+function myhelp() {
+    echo -e "\n\033[1;36m=================================================================\033[0m"
+    echo -e "\033[1;35m  🚀 THE CROSS-PLATFORM TERMINAL CHEATSHEET\033[0m"
+    echo -e "\033[1;36m=================================================================\033[0m\n"
+
+    # Padded print helper
+    print_cmd() { printf "  \033[1;32m%-15s\033[0m : %s\n" "$1" "$2"; }
+
+    echo -e "\033[1;33m📂 FILES & NAVIGATION\033[0m"
+    [ "$HAS_ZOXIDE" = "true" ] && print_cmd "cd" "Smarter cd (zoxide)"
+    print_cmd "cw" "Switch editor workspace to current folder (Antigravity/Cursor/Code)"
+    if [ "$HAS_EZA" = "true" ]; then
+        print_cmd "ls, ll" "Modern ls with icons (ll = long format, lt = tree)"
+        print_cmd "lsh, llh" "Same as above but shows hidden files"
+    else
+        print_cmd "ls, ll" "Standard ls and ll listing"
+    fi
+    [ "$HAS_BAT" = "true" ] && print_cmd "cat" "Modern cat with syntax highlighting (bat)"
+    print_cmd "extract"   "Unzip ANY archive format instantly"
+    if [ "$IS_WIN" = "true" ]; then
+        print_cmd "symlink" "Create a junction (Windows) — symlink <link> <target>"
+    else
+        print_cmd "symlink" "Create a symlink — symlink <link> <target>"
+    fi
+    print_cmd "compress"  "Zip files instantly (e.g. compress archive docs/)"
+    print_cmd "backup"    "Backup a file (e.g. backup file.txt -> file.txt_date.bak)"
+
+    echo -e "\n\033[1;33m🔍 SEARCH & SYSTEM\033[0m"
+    print_cmd "memhog"   "Show top 15 memory-hogging processes"
+    [ "$HAS_YAZI" = "true" ] && print_cmd "y"      "Terminal visual file explorer (yazi)"
+    print_cmd "top"    "Process monitor (btm/bottom if installed, else system top)"
+    [ "$HAS_XH" = "true" ]   && print_cmd "http"   "API testing and cURL replacement (xh)"
+    [ "$HAS_RG" = "true" ]   && print_cmd "rg"     "Blazing fast text search (ripgrep)"
+    [ "$HAS_TLDR" = "true" ] && print_cmd "tldr"   "Quick cheat sheets for terminal commands"
+    if [ "$HAS_FZF" = "true" ]; then
+        print_cmd "Alt+F / f"        "Fuzzy file search from CWD -> inject path at cursor"
+        print_cmd "Alt+Shift+F / ff"  "Fuzzy file search from HOME -> inject path at cursor"
+        print_cmd "Ctrl+H / h"        "Fuzzy history search -> inject command at cursor"
+        print_cmd "v"                 "Fuzzy file search -> open in VS Code"
+        print_cmd "hh"                "Fuzzy history search -> copy to clipboard"
+    fi
+    print_cmd "port, kill-port" "Check what app is on a port, and Kill it"
+    print_cmd "copy, cpwd, ccat" "Clipboard: copy stdin, copy pwd, copy file"
+    print_cmd "path"        "Print PATH variable neatly"
+    print_cmd "c"           "Clear the terminal screen"
+    print_cmd "myip, localip" "Get public and local IP address"
+    print_cmd "sleep"       "Cross-platform sleep (with Python fallback)"
+
+    echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
+    [ "$HAS_LAZYGIT" = "true" ] && print_cmd "lg"  "Open Lazygit TUI (Visual Git)"
+    print_cmd "gs, gl" "Git status (short), Git log (beautiful graph)"
+    print_cmd "gu, gr" "Git Undo (reset HEAD~1), Git Redo (time machine)"
+    print_cmd "gam"    "Git Amend (add to last commit quietly)"
+    if [ "$HAS_GH" = "true" ]; then
+        print_cmd "pr, prs" "Create a GitHub PR, List open PRs"
+    fi
+    print_cmd "help git" "Decode your git prompt symbols (cheat sheet)"
+
+    echo -e "\n\033[1;33m🐍 DEVELOPMENT & DATA\033[0m"
+    [ "$HAS_JQ" = "true" ] && print_cmd "jq"      "Command-line JSON processor"
+    [ "$HAS_YQ" = "true" ] && print_cmd "yq"      "Command-line YAML processor"
+    print_cmd "python, pip" "Guarded aliases pointing AI tools to UV"
+    print_cmd "envup"   "Load variables from a .env file"
+    print_cmd "pyclean" "Delete all __pycache__ and compiled files"
+
+    echo -e "\n\033[1;33m🛡️ SETUP & SAFETY\033[0m"
+    print_cmd "setup-terminal" "Install all missing tools"
+    print_cmd "refresh"        "Rebuild tool cache + reload shell"
+    [ "$IS_WIN" != "true" ] && print_cmd "please" "Re-run previous command with sudo"
+    if [ "$HAS_TRASH" = "true" ]; then
+        print_cmd "rm, del" "Move to Trash (Safe versions of deletion)"
+    fi
+
+    echo -e "\n\033[1;36m=================================================================\033[0m\n"
+}
+
+function help_git() {
+    # True-color (24-bit) ANSI — matching starship.toml [palettes.hyper]
+    local grey="\033[38;2;108;112;134m"   # #6c7086
+    local red="\033[38;2;243;139;168m"    # #f38ba8
+    local green="\033[38;2;166;227;161m"  # #a6e3a1
+    local yellow="\033[38;2;249;226;175m" # #f9e2af
+    local magenta="\033[38;2;203;166;247m" # #cba6f7
+    local cyan="\033[38;2;137;220;235m"   # #89dceb
+    local white="\033[38;2;205;214;244m"  # #cdd6f4
+    local bold="\033[1m"
+    local reset="\033[0m"
+
+    # Fixed-width row printing for symbols
+    print_sym() {
+        local sym="$1" color="$2" vlen="$3" label="$4" desc="$5"
+        local pad=$((6 - vlen))
+        printf "    ${color}${bold}%s${reset}%*s  ${color}%-12s${reset}  ${white}%s${reset}\n" \
+            "$sym" "$pad" "" "$label" "$desc"
+    }
+
+    echo -e "\n${cyan}=================================================================${reset}"
+    echo -e "${magenta}  GIT PROMPT CHEAT SHEET${reset}"
+    echo -e "${cyan}=================================================================${reset}"
+
+    echo -e "\n${yellow}  YOUR PROMPT LOOKS LIKE THIS:${reset}"
+    local user="${USER:-${USERNAME:-$(whoami)}}"
+    echo -e "  ${cyan}${user}${reset}  ${white}…/my-repo${reset}  ${yellow}refactor${reset}  ${white}[${reset} ${grey}⛶2${reset} ${red}⨳1${reset} ${green}⇡3${reset} ${red}⇣1${reset} ${green}+2${reset} ${yellow}!3${reset} ${magenta}↦1${reset} ${red}✘1${reset} ${cyan}?7${reset} ${white}]${reset}  ${green}+90${reset} ${red}-132${reset} ${white}00:30${reset}"
+
+    echo -e "\n${yellow}  GIT STATUS SYMBOLS${reset}"
+    echo -e "    ${bold}${white}SYM     NAME          DESCRIPTION${reset}"
+    echo -e "    ${grey}───     ────────────  ───────────────────────────────────────${reset}"
+    print_sym "⛶N"  "$grey"    2 "stashed"    "N stash entries saved (git stash list)"
+    print_sym "⨳N"  "$red"     2 "conflicted" "N merge conflicts — resolve before commit"
+    print_sym "⇡N"  "$green"   2 "ahead"      "N commits ahead of remote (need to push)"
+    print_sym "⇣N"  "$red"     2 "behind"     "N commits behind remote (need to pull)"
+    print_sym "+N"  "$green"   2 "staged"     "N files added to index (git add)"
+    print_sym "!N"  "$yellow"  2 "modified"   "N tracked files changed but not staged"
+    print_sym "↦N"  "$magenta" 2 "renamed"    "N files renamed in the index"
+    print_sym "✘N"  "$red"     2 "deleted"    "N files deleted (staged or unstaged)"
+    print_sym "?N"  "$cyan"    2 "untracked"  "N new files not yet tracked"
+
+    echo -e "\n${yellow}  GIT METRICS${reset}"
+    echo -e "    ${bold}${white}SYM     NAME          DESCRIPTION${reset}"
+    echo -e "    ${grey}───     ────────────  ───────────────────────────────────────${reset}"
+    print_sym "+N"   "$green" 2 "added"      "Lines added in your working changes"
+    print_sym "-N"   "$red"   2 "deleted"    "Lines deleted in your working changes"
+
+    echo -e "\n${cyan}=================================================================\n${reset}"
+}
+
+unalias help 2>/dev/null || true
+function help() {
+    if [ "$1" = "git" ]; then
+        help_git | less -RF
+    else
+        myhelp | less -RF
+    fi
+}

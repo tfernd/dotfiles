@@ -1,0 +1,141 @@
+format = """
+$os\
+$username\
+$directory\
+$git_branch\
+$git_status\
+$git_metrics\
+$time\
+$cmd_duration\
+$line_break\
+$package\
+$aws\
+$terraform\
+$nodejs\
+$bun\
+$python\
+$battery\
+$line_break\
+$status\
+$character"""
+
+command_timeout = 2000
+palette = "hyper"
+
+[palettes.hyper]
+blue = "#89b4fa"
+yellow = "#f9e2af"
+green = "#a6e3a1"
+red = "#f38ba8"
+white = "#cdd6f4"
+grey = "#6c7086"
+magenta = "#cba6f7"
+cyan = "#89dceb"
+dark_grey = "#313244"
+
+[os]
+disabled = false
+style = "bg:magenta fg:white"
+format = "[](magenta)[$symbol]($style)[](fg:magenta bg:cyan)"
+
+[directory]
+style = "bg:blue fg:white"
+format = "[  $path ]($style)[](fg:blue bg:yellow)"
+truncation_length = 2
+truncation_symbol = "…/"
+truncate_to_repo = true
+use_os_path_sep = false
+
+[git_branch]
+style = "bg:yellow fg:black"
+symbol = ""
+format = "[ $symbol $branch(:$remote_branch) ]($style)[](fg:yellow) "
+always_show_remote = false
+only_attached = false
+
+[git_status]
+style = "white"
+format = '([\[ $all_status$ahead_behind \]]($style) )'
+conflicted = "[⚔️${count}](red) "
+ahead = "[⇡${count}](green) "
+behind = "[⇣${count}](red) "
+diverged = "⇕ [⇡${ahead_count}](green) [⇣${behind_count}](red) "
+untracked = "[?${count}](cyan) "
+staged = "[+${count}](green) "
+modified = "[!${count}](yellow) "
+renamed = "[»${count}](magenta) "
+deleted = "[✘${count}](red) "
+stashed = "[≡${count}](grey) "
+ignore_submodules = true
+
+[git_metrics]
+disabled = false
+added_style = "bold green"
+deleted_style = "bold red"
+format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+
+[nodejs]
+style = "bold green"
+symbol = ""
+format = "via [$symbol ($version)]($style) "
+
+[python]
+style = "bold yellow"
+symbol = ""
+format = 'via [$symbol ($version) (\($virtualenv\) )]($style)'
+
+[time]
+disabled = false
+time_format = "%R"
+style = "bg:dark_grey fg:white"
+format = "[](dark_grey)[  $time ]($style)[ ](dark_grey)"
+
+[cmd_duration]
+min_time = 100
+format = "took [$duration]($style) "
+style = "bold grey"
+show_milliseconds = true
+
+[username]
+show_always = true
+style_user = "bg:cyan fg:black"
+style_root = "bg:cyan fg:black"
+format = "[  $user ]($style)[](fg:cyan bg:blue)"
+
+[package]
+symbol = "📦"
+style = "bold white"
+format = "version [$symbol $version]($style) "
+disabled = false
+
+[bun]
+symbol = "󰛦"
+style = "bold magenta"
+format = "via [$symbol ($version)]($style) "
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+[aws]
+symbol = " "
+style = "bold yellow"
+format = "on [$symbol($profile )]($style)"
+disabled = false
+
+[battery]
+disabled = false
+display = [
+    { threshold = 20, style = "bold red" },
+    { threshold = 50, style = "bold yellow" },
+]
+
+[terraform]
+format = '[💠 terraform]($style) '
+style = "bold #623CE4"
+
+[status]
+disabled = false
+style = "bold red"
+format = "[$status ]($style)"
+symbol = "✘"
