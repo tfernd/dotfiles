@@ -9,7 +9,7 @@ A high-performance, modular, and cross-platform dotfiles ecosystem designed for 
 ### macOS & Linux
 Deploy the full environment and install all core tools with a single command (requires `gh auth` if private):
 ```bash
-bash -c "$(gh repo view tfernd/dotfiles --path install.sh)"
+gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh
 ```
 
 ### Windows (PowerShell Administrator)

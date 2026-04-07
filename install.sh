@@ -33,7 +33,11 @@ function bootstrap() {
 
     # 1. Clone or Move to ~/.dotfiles
     if [ ! -d "$target_dir" ]; then
-        if [ -d "$SCRIPT_DIR/.git" ] && [ "$SCRIPT_DIR" != "$target_dir" ]; then
+        if [[ "$SCRIPT_DIR" == /tmp/* ]]; then
+            echo "🚚 Moving dotfiles from temporary path to $target_dir..."
+            mv "$SCRIPT_DIR" "$target_dir"
+            SCRIPT_DIR="$target_dir" # Update path for the rest of the script
+        elif [ -d "$SCRIPT_DIR/.git" ] && [ "$SCRIPT_DIR" != "$target_dir" ]; then
             echo "🔗 Linking current directory to $target_dir..."
             ln -sfn "$SCRIPT_DIR" "$target_dir"
         else
