@@ -74,13 +74,45 @@ fi
 
 # --- Safety & Deletion Aliases ---
 
-# --- File Deletion (rm / del) -> Trash Mapping ---
+# --- Smart File Deletion (rm / del) -> Safe Trash Mapping ---
 if [ "$HAS_TRASH" = "true" ]; then
-    # Prefer trash-put (Linux/Python), fallback to trash (Windows/Node)
+    unalias rm del 2>/dev/null || true
+    
+    function rm() {
+        local args=()
+        local force=false
+        
+        # Parse flags
+        for arg in "$@"; do
+            case "$arg" in
+                -rf|-f|-fr) force=true ;;
+                -*) ;; # Ignore other flags for trash-put
+                *) args+=("$arg") ;;
+            esac
+        done
+
+        # Filter existing items
+        local existing=()
+        for item in "${args[@]}"; do
+            [ -e "$item" ] && existing+=("$item")
+        done
+
+        if [ ${#existing[@]} -gt 0 ]; then
+            if [ "$HAS_TRASH_PUT" = "true" ]; then
+                command trash-put "${existing[@]}"
+            else
+                command trash "${existing[@]}"
+            fi
+        elif [ "$force" = "false" ] && [ ${#args[@]} -gt 0 ]; then
+            # Show error only if not forced and arguments were provided
+            [ "$HAS_TRASH_PUT" = "true" ] && command trash-put "${args[@]}" || command trash "${args[@]}"
+        fi
+    }
+    alias del='rm'
+    
     if [ "$HAS_TRASH_PUT" = "true" ]; then
-        alias rm='trash-put'
-        alias del='trash-put'
         alias rl='trash-list'
+        # ... (rest of the trash-restore functions)
         
         # --- Interactive Trash Recovery ---
         # Provides a fuzzy-search interface to selectively restore deleted files.
