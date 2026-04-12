@@ -6,7 +6,7 @@
 # (bash/zsh), and installs all required professional tools.
 # 
 # One-liner:
-# rm -rf /tmp/dotfiles && gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh
+# /bin/rm -rf /tmp/dotfiles && gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh
 # ============================================================================
 
 # Resolve directory of this script

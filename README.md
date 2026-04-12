@@ -11,7 +11,7 @@ A high-performance, modular, and cross-platform dotfiles ecosystem designed for 
 Deploy the full environment and install all core tools with a single command (requires `gh auth` if private):
 
 ```bash
-rm -rf /tmp/dotfiles && gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh && source ~/.dotfiles/init.sh && setup-terminal
+/bin/rm -rf /tmp/dotfiles && gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh && source ~/.dotfiles/init.sh && setup-terminal
 ```
 
 ### Windows (PowerShell Administrator)
