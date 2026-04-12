@@ -65,7 +65,7 @@ function bootstrap() {
     # 3. Deploy Starship Config (Pills design)
     echo "🎨 Deploying Starship configuration..."
     mkdir -p "$HOME/.config"
-    cp -f "$target_dir/starship.toml" "$HOME/.config/starship.toml" 2>/dev/null || ln -sfn "$target_dir/starship.toml" "$HOME/.config/starship.toml"
+    ln -sfn "$target_dir/starship.toml" "$HOME/.config/starship.toml"
 }
 
 function setup_terminal() {
@@ -77,11 +77,12 @@ function setup_terminal() {
     if [ "$IS_MAC" = "true" ]; then
         echo "🍎 macOS Detected. Installing via Homebrew..."
         [ "$(has_tool brew)" = "false" ] && /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        brew install starship zoxide bat eza ripgrep fd fzf trash-cli gh lazygit yazi bottom yq uv xh
+        brew install starship zoxide bat eza ripgrep fd fzf trash-cli gh lazygit yazi bottom yq xh p7zip zip unzip xz zstd
     elif [ "$IS_LINUX" = "true" ]; then
         echo "🐧 Linux Detected. Updating and installing via APT..."
         sudo apt update
-        sudo apt install -y git build-essential zsh tldr trash-cli xclip zsh-autosuggestions zsh-syntax-highlighting curl jq procps wget bat fd-find fzf ripgrep unzip
+        sudo apt install -y git build-essential zsh tldr trash-cli xclip zsh-autosuggestions zsh-syntax-highlighting \
+            curl jq procps wget bat fd-find fzf ripgrep unzip zip p7zip-full unrar-free xz-utils zstd bzip2
 
         # Install modern tools if missing (brew is usually best for these on linux)
         if [ "$(has_tool brew)" = "false" ] && [ "$(has_tool eza)" = "false" ]; then
@@ -92,8 +93,27 @@ function setup_terminal() {
         
         # Prefer brew's version of these for updated features
         if [ "$(has_tool brew)" = "true" ]; then
-            brew install eza lazygit xh yazi bottom yq uv
+            brew install eza lazygit xh yazi bottom yq
         fi
+    elif [ "$IS_WIN" = "true" ]; then
+        echo "🪟 Windows Detected. Attempting installation via Scoop..."
+        if [ "$(has_tool scoop)" = "false" ]; then
+            echo "🍦 Scoop not found. Please install it first: https://scoop.sh"
+        else
+            scoop install starship zoxide bat eza ripgrep fd fzf gh lazygit yazi-nightly bottom yq xh 7zip zip unzip xz zstd
+        fi
+    fi
+
+    # --- UV Standalone Installation (Astral) ---
+    if [ "$(has_tool uv)" = "false" ]; then
+        echo "🐍 Installing UV via official standalone installer (astral.sh)..."
+        if [ "$IS_WIN" = "true" ]; then
+            powershell.exe -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+        else
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+        fi
+    else
+        echo "🐍 UV already installed, skipping."
     fi
 
     # --- Post-Install: Git Config (Delta) ---

@@ -1,8 +1,17 @@
-# --- Guard against multiple sourcing ---
+#!/usr/bin/env bash
+# ============================================================================
+# ZOXIDE SMART JUMP (CD) INTEGRATION
+# ============================================================================
+
+# --- Zoxide Guard ---
+# Prevents expensive re-initialization of the database interface on shell re-load.
 if [ "$_ZOXIDE_LOADED" = "true" ]; then
     return
 fi
 _ZOXIDE_LOADED=true
+
+# --- Smart Jump Initialization ---
+# Loads the zoxide database and overrides the 'cd' command for fuzzy jumping.
 
 if [ "$HAS_ZOXIDE" = "true" ]; then
     ZOXIDE_CACHE="$HOME/.cache/zoxide_init.$CURRENT_SHELL"

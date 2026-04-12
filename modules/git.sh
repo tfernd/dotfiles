@@ -3,7 +3,8 @@
 # GIT WORKFLOWS & FUNCTIONS
 # ============================================================================
 
-# gr (Git Redo): Reset point with fuzzy selection (Time Machine)
+# --- Git Time Machine (Redo) ---
+# Resets the repository to a previous state using a fuzzy-selected reflog entry.
 unalias gr 2>/dev/null || true
 function gr() {
     if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -28,3 +29,23 @@ function gr() {
         echo "❌ Redoing cancelled."
     fi
 }
+
+# --- Git & GitHub Aliases ---
+
+[ "$HAS_LAZYGIT" = "true" ] && alias lg="lazygit"
+
+alias gs='git status -sb'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gb='git branch'
+alias gba='git branch -a'
+alias ga='git add --all'
+alias gam='git commit --amend --no-edit'
+alias gpf='git push --force-with-lease'
+alias gu='git reset --soft HEAD~1'
+alias gl='git log --graph --abbrev-commit --decorate --date=relative --format=format:"%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)" -n 15'
+
+if [ "$HAS_GH" = "true" ]; then
+    alias pr='gh pr create --web'
+    alias prs='gh pr list'
+fi

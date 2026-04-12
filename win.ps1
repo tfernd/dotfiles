@@ -14,7 +14,9 @@ $tools = @(
     "sharkdp.fd", "dbrgn.tealdeer", "JesseDuffield.lazygit",
     "GitHub.cli", "junegunn.fzf", "dandavison.delta",
     "jqlang.jq", "ducaale.xh", "MikeFarah.yq",
-    "sxyazi.yazi", "Clement.bottom", "astral-sh.uv"
+    "sxyazi.yazi", "Clement.bottom",
+    "7zip.7zip", "Info-ZIP.Zip", "Info-ZIP.UnZip", 
+    "Tukaani.XZ", "Facebook.Zstd"
 )
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -57,6 +59,13 @@ if (Get-Command trash -ErrorAction SilentlyContinue) {
 } else {
     Write-Host "`n[+] Installing trash-cli via bun..." -ForegroundColor Yellow
     bun install -g trash-cli
+}
+
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    Write-Host "`n[+] Installing uv via official standalone installer (astral.sh)..." -ForegroundColor Yellow
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+} else {
+    Write-Host "`n[~] uv already installed, skipping." -ForegroundColor Cyan
 }
 
 Write-Host "`n[OK] Done! Press Enter to close this window." -ForegroundColor Green

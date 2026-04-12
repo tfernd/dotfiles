@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# --- Guard against multiple sourcing ---
+# ============================================================================
+# INTERACTIVE SHELL INTERFACE (UI/UX)
+# ============================================================================
+
+# --- Shell Interface Guard ---
+# Prevents re-initializing expensive prompt engines when re-sourcing the shell.
 if [ "$_PROMPT_LOADED" = "true" ]; then
     return
 fi
 _PROMPT_LOADED=true
 
-# --- Oh My Zsh ---
+# --- Zsh (Oh My Zsh) Integration ---
+# Bootstraps the Zsh framework and its core plugin ecosystem.
 if [ "$CURRENT_SHELL" = "zsh" ] && [ -d "$HOME/.oh-my-zsh" ]; then
     export ZSH="$HOME/.oh-my-zsh"
     plugins=(git python pip)

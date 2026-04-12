@@ -3,7 +3,8 @@
 # FILE & WORKSPACE MANAGEMENT FUNCTIONS
 # ============================================================================
 
-# cw — switch the current editor window (Antigravity, Cursor, or Code) to this folder
+# --- Editor Re-attachment ---
+# Switches the current editor window to focus on the current directory.
 unalias cw 2>/dev/null || true
 function cw() {
     local node=$(echo "$VSCODE_GIT_ASKPASS_NODE" | tr '[:upper:]' '[:lower:]')
@@ -15,7 +16,8 @@ function cw() {
     esac
 }
 
-# backup — create a dated copy of a file or folder
+# --- Point-in-time Backup ---
+# Creates a timestamped duplicate of a file or directory for safe editing.
 unalias backup 2>/dev/null || true
 function backup() {
     if [ -z "$1" ]; then
@@ -27,7 +29,8 @@ function backup() {
     echo "✅ Backed up $1 -> $dest"
 }
 
-# symlink — cross-platform symlink creator (handles junctions on Windows)
+# --- Cross-Platform Symlinking ---
+# Creates directory links compatible with both Unix and Windows (Junctions).
 unalias symlink 2>/dev/null || true
 function symlink() {
     if [ $# -ne 2 ]; then
@@ -42,3 +45,25 @@ function symlink() {
         ln -s "$target" "$link"
     fi
 }
+
+# --- Navigation & File Reading Aliases ---
+
+# --- File Listing (ls/eza) ---
+if [ "$HAS_EZA" = "true" ]; then
+    alias ls='eza --icons --group-directories-first --color=always'
+    alias ll='eza -l --icons --group-directories-first --color=always --time-style=long-iso --git'
+    alias lt='eza --tree --icons --group-directories-first -L 2 --color=always'
+
+    alias lsh='eza -a --icons --group-directories-first --color=always'
+    alias llh='eza -la --icons --group-directories-first --color=always --time-style=long-iso --git'
+    alias lth='eza -a --tree --icons --group-directories-first -L 2 --color=always'
+fi
+
+# --- File Reading (cat/bat) ---
+if [ "$HAS_BAT" = "true" ]; then
+    [ "$HAS_BATCAT" = "true" ] && alias bat='batcat'
+    alias cat='bat --style=plain --paging=never'
+fi
+
+[ "$HAS_FD" = "true" ]   && alias fd='fd --color=auto'
+[ "$HAS_YAZI" = "true" ] && alias y='yazi'

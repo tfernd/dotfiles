@@ -53,8 +53,9 @@ function myhelp() {
 
     echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
     [ "$HAS_LAZYGIT" = "true" ] && print_cmd "lg"  "Open Lazygit TUI (Visual Git)"
-    print_cmd "gs, gl" "Git status (short), Git log (beautiful graph)"
-    print_cmd "ga"     "Git add all changes"
+    print_cmd "gs, gds" "Git status (short), Git diff staged"
+    print_cmd "gb, gba" "List branches, List all branches (inc. remote)"
+    print_cmd "gl, ga" "Git log (beautiful graph), Git add all"
     print_cmd "gu, gr" "Git Undo (reset HEAD~1), Git Redo (time machine)"
     print_cmd "gam"    "Git Amend (add to last commit quietly)"
     print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
@@ -62,6 +63,14 @@ function myhelp() {
         print_cmd "pr, prs" "Create a GitHub PR, List open PRs"
     fi
     print_cmd "help git" "Decode your git prompt symbols (cheat sheet)"
+
+    echo -e "\n\033[1;33m☁️  AWS & CLOUD\033[0m"
+    if [ "$HAS_AWS" = "true" ]; then
+        print_cmd "aws login"   "Login via modern CLI session"
+        print_cmd "aws who"     "Check current AWS identity (Account, Role, Profile)"
+        print_cmd "aws s3 ls"   "List your S3 buckets"
+    fi
+    [ "$HAS_TERRAFORM" = "true" ] && print_cmd "tf" "Terraform (infrastructure as code)"
 
     echo -e "\n\033[1;33m🐍 DEVELOPMENT & DATA\033[0m"
     [ "$HAS_JQ" = "true" ] && print_cmd "jq"      "Command-line JSON processor"

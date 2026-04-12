@@ -3,7 +3,8 @@
 # CORE VARIABLES & SYSTEM DETECTION
 # ============================================================================
 
-# Detect current shell reliably in both bash and zsh
+# --- OS & Shell Intelligence ---
+# Enables cross-platform behavior by detecting the environment at startup.
 if [ -n "$ZSH_VERSION" ]; then
     export CURRENT_SHELL="zsh"
 elif [ -n "$BASH_VERSION" ]; then

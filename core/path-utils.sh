@@ -3,8 +3,8 @@
 # PATH MANIPULATION UTILITIES
 # ============================================================================
 
-# _path_add — Add a directory to PATH only if it's not already there.
-# Usage: _path_add "/my/path" [prepend|append]
+# --- Path Injector ---
+# Safely prepends or appends a directory to PATH only if it exists and is unique.
 function _path_add() {
     local dir="$1"
     local mode="${2:-prepend}"
@@ -19,7 +19,8 @@ function _path_add() {
     fi
 }
 
-# _path_clean — Remove all duplicate entries from PATH while preserving order.
+# --- Path Deduplicator ---
+# Prunes redundant entries from PATH to keep command lookups fast and clean.
 function _path_clean() {
     if [ -n "$ZSH_VERSION" ]; then
         typeset -gU path

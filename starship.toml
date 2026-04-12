@@ -10,6 +10,7 @@ $cmd_duration\
 $line_break\
 $package\
 $aws\
+$custom\
 $terraform\
 $nodejs\
 $bun\
@@ -118,10 +119,16 @@ success_symbol = "[❯](bold green)"
 error_symbol = "[❯](bold red)"
 
 [aws]
+format = 'on [$symbol($profile )(\($region\) )(\[$duration\])]($style)'
 symbol = " "
 style = "bold yellow"
-format = "on [$symbol($profile )]($style)"
 disabled = false
+force_display = true
+
+[aws.region_aliases]
+eu-west-1 = "󰈚 IE "
+us-east-1 = "󰈚 VA "
+ap-southeast-1 = "󰈚 SG "
 
 [battery]
 disabled = false
@@ -133,6 +140,13 @@ display = [
 [terraform]
 format = '[💠 terraform]($style) '
 style = "bold #623CE4"
+
+[custom.aws_role]
+command = "grep -A 10 \"\\[profile $AWS_PROFILE\\]\" ~/.aws/config | grep \"role_arn\" | cut -d/ -f2"
+when = "grep -q \"role_arn\" ~/.aws/config"
+style = "bold yellow"
+format = "([$output]($style))"
+description = "Show current AWS role from local config"
 
 [status]
 disabled = false

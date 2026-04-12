@@ -1,6 +1,6 @@
 # 🚀 Modern Dotfiles
 
-A high-performance, modular, and cross-platform dotfiles ecosystem designed for **macOS**, **Linux**, and **Windows**. Optimized for a sub-50ms startup time and a frictionless developer workflow.
+A high-performance, modular, and cross-platform dotfiles ecosystem designed for **macOS**, **Linux**, and **Windows**.
 
 ---
 
@@ -41,58 +41,86 @@ This environment replaces legacy commands with these modern alternatives:
 
 ---
 
-## 📖 Terminal Cheatsheet
+## 📖 Terminal Inventory
 
-Type `help` in your terminal to see this list live.
+Type `help` in your terminal to see this list live or `dotdoctor` to check system health.
 
 ### 📂 Files & Navigation
 
-- `cd` : Smarter cd (zoxide)
-- `cw` : Switch editor window to current folder (Cursor/Code/Antigravity)
-- `ls` / `ll` : Modern `ls` with icons (ll = long, lt = tree)
-- `cat` : Modern `cat` with syntax highlighting (bat)
-- `extract` / `compress` : Instant archive handling for ANY format
-- `backup` : Quick dated copy of a file or folder
-- `symlink` : Cross-platform symlink/junction creator
+- `cd` : Smarter directory jumping (powered by **Zoxide**)
+- `ls` / `ll` / `lt` : Modern `ls` with icons/colors (**Eza**) — `ll`=long, `lt`=tree
+- `cat` : Modern `cat` with syntax highlighting (**Bat**)
+- `y` : Terminal visual file explorer (**Yazi**)
+- `fd` : Simple and fast alternative to `find`
+- `cw` : Instantly switch editor window to current folder (Cursor/Code/Antigravity)
+- `backup <file>` : Create a dated copy: `filename.YYYYMMDD_HHMMSS.bak`
+- `symlink <link> <target>` : Cross-platform symlink creator (handles Windows Junctions)
+- `extract <file>` : Instant extraction for `.zip`, `.tar.gz`, `.rar`, `.7z`, etc.
+- `compress <name> <files...>` : Smart compression (defaults to `.tar.gz` if no extension)
 
-### 🔍 Search & System
+### 🔍 Search & Fuzzy Workflows (FZF)
 
-- `f` / `ff` : Fuzzy file search (CWD / HOME) -> inject path at cursor
-- `h` / `hh` : Fuzzy history search -> inject / copy to clipboard
-- `y` : Terminal visual file explorer (yazi)
-- `http` : API testing and cURL replacement (xh)
-- `port` / `kill-port` : Port management and process termination
-- `copy` / `cpwd` / `ccat` : Advanced clipboard utilities
-- `myip` / `localip` : Quick network identity discovery
-- `memhog` : Show top 15 memory-hogging processes
+- `f` / `ff` : Fuzzy file search (CWD / HOME) -> inject path at cursor position
+- `h` / `hh` : Fuzzy history search -> `h` injects to prompt / `hh` copies to clipboard
+- `rt` / `rtt` : Interactive Trash restore (interactive FZF selector)
 
 ### 🐙 Git & GitHub
 
-- `lg` : Open Lazygit TUI (Visual Git)
-- `gs` / `gl` : Short status / Beautiful graph log
-- `gu` / `gr` / `gam` : Undo commit / Redo state / Amend quietly
-- `pr` / `prs` : GitHub CLI wrappers for PR management
+- `lg` : Open **Lazygit** TUI (Visual Git)
+- `gs` : Short branch status (`git status -sb`)
+- `gds` : Diff staged changes (`git diff --staged`)
+- `gb` / `gba` : List local branches / List all branches (including remote)
+- `ga` : Stage all changes (`git add --all`)
+- `gl` : High-contrast, beautiful graph log
+- `gu` : Undo last commit (keeps changes staged)
+- `gam` : Amend current commit quietly
+- `gr` : **Git Redo** (Fuzzy Time Machine) — reset to any point in reflog
+- `pr` / `prs` : GitHub CLI wrappers for browser-based PR creation and listing
 
-#### 🎨 Git Prompt Symbols (`help git`)
+### 🌐 Network & System
 
-| Sym    | Name       | Description                        |
-| :----- | :--------- | :--------------------------------- |
-| **⛶N** | Stashed    | N stash entries saved              |
-| **⨳N** | Conflicted | N merge conflicts (resolve first!) |
-| **⇡N** | Ahead      | N commits away from remote (push)  |
-| **⇣N** | Behind     | N commits behind remote (pull)     |
-| **+N** | Staged     | N files added to index             |
-| **!N** | Modified   | N files changed but not staged     |
-| **↦N** | Renamed    | N files moved/renamed              |
-| **✘N** | Deleted    | N files removed                    |
-| **?N** | Untracked  | N new files                        |
+- `myip` : Show public IPv4 and IPv6 addresses
+- `localip` : Show current local LAN IP (OS-aware)
+- `port <num>` : See what process is listening on a specific port
+- `kill-port <num>` : Force kill any process occupying a port
+- `memhog` : Show top 15 memory-consuming processes
+- `top` : Interactive system monitor (prefers `btm` if installed)
+- `http` : Modern API testing and cURL replacement (**XH**)
+- `copy` / `cpwd` : Clipboard utilities (`copy` reads stdin, `cpwd` copies current path)
+- `path` : Pretty-print your `$PATH` one entry per line
+- `please` : Re-run previous command with `sudo` (Linux/macOS only)
+
+### 🛠️ Environment & Dev-Ops
+
+- `dotdoctor` : Check if all core tools are installed and caches are healthy
+- `envup <file>` : Load `.env` variables into your current shell session
+- `pyclean` : Recursively delete Python bytecode and cache folders
+- `setup-terminal` : Re-run installer to repair or update the environment
+- `refresh` : Rebuild the tool cache and reload the shell configuration
+- `hclear` : Securely wipe all terminal history with confirmation
+- `c` : Shortcut for `clear`
+
+### 🤖 AI Guard Aliases
+
+Global aliases that warn you when using legacy tools and suggest modern, faster AI-optimized alternatives:
+
+- `node`, `npm`, `npx` -> Suggests **Bun**
+- `yarn`, `pnpm` -> Suggests **Bun**
+- `nodemon`, `ts-node`, `tsx` -> Suggests **Bun**
+- `python`, `pip`, `venv` -> Suggests **UV**
+- `poetry` -> Suggests **UV**
 
 ---
 
-## ✨ Engineering Features
+## ☁️ Cloud & Infrastructure
 
-- **🚀 Sub-50ms Startup**: Custom **Tool Cache** plugin bypasses expensive `command -v` lookups.
-- **🗑️ FZF Recovery**: `rt` (local) and `rtt` (global) use interactive filters to restore files from Trash.
-- **🐍 Python & JS Guards**: Global aliases for `python`/`node` that warn and redirect to `uv`/`bun`.
-- **🏗️ Strictly Modular**: Clean separation between `env`, `aliases`, `functions`, and `plugins`.
-- **🧪 CI/CD Ready**: Built-in test suite (`bash test/suite.sh`) for environment health checks.
+Enhanced support for AWS and Terraform development:
+
+- **Intelligent AWS Prompt**:
+  -  **Profile name** and **Account ID** visibility.
+  - **Region Flags** (e.g. 🇮🇪 for Ireland, 🇺🇸 for US).
+  - **Session Duration**: Live countdown timer for temporary/SSO credentials.
+- `aws who` : Dynamic identity summary (Account, Role, Profile, Region).
+- `aws login` : Alias for modern AWS login sessions.
+- `tf` : Shortcut for **Terraform**.
+- `aws s3 ls` : Quickly list your cloud storage buckets.

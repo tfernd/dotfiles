@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# --- Guard against multiple sourcing ---
+# ============================================================================
+# SYSTEM PATHS & BINARY DISCOVERY
+# ============================================================================
+
+# --- Path Guard ---
+# Prevents expensive path reconstruction when re-sourcing the shell.
 if [ "$_PATHS_LOADED" = "true" ]; then
     return
 fi
 _PATHS_LOADED=true
 
-# Windows user profile HOME detection
+# --- Windows Interop ---
+# Bridges the gap between Windows and Unix HOME definitions.
 if [ -n "$USERPROFILE" ] && [ -z "$HOME" -o "$HOME" = "/" ]; then
     export HOME=$(cygpath -u "$USERPROFILE")
 fi

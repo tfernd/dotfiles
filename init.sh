@@ -57,29 +57,28 @@ function source_timed() {
 
 [ "$PROFILE_DOTFILES" = "true" ] && echo -e "\n\033[1;35m🚀 Profiling Dotfiles Startup...\033[0m"
 
-# 1. Load Base Environment
+# 1. Load Core Environment (Architecture)
+export AWS_PROFILE=tferds
+
 for module in path-utils.sh os-detect.sh history.sh paths.sh; do
-    [ -f "$DOTFILES_DIR/env/$module" ] && source_timed "$DOTFILES_DIR/env/$module"
+    [ -f "$DOTFILES_DIR/core/$module" ] && source_timed "$DOTFILES_DIR/core/$module"
 done
 
-# 2. Load Tool Cache & Core Plugins
-for module in tool-cache.sh zoxide.sh prompt.sh; do
+# 2. Load Tool Cache & Core Plugins (Integrations)
+for module in tool-cache.sh zoxide.sh shell.sh; do
     [ -f "$DOTFILES_DIR/plugins/$module" ] && source_timed "$DOTFILES_DIR/plugins/$module"
 done
 
-# 3. Load Functions & Aliases
+# 3. Load Feature Modules (Functions & Aliases)
 if [ -n "$ZSH_VERSION" ]; then setopt local_options NULL_GLOB; else shopt -s nullglob; fi
 
-for file in "$DOTFILES_DIR/functions/"*.sh; do 
-    source_timed "$file"
-done
-for file in "$DOTFILES_DIR/aliases/"*.sh; do 
+for file in "$DOTFILES_DIR/modules/"*.sh; do 
     source_timed "$file"
 done
 
 [ -z "$ZSH_VERSION" ] && shopt -u nullglob
 
-# 4. Load OS-Specific Quirks Overrides
+# 4. Load OS-Specific Quirks (Overrides)
 [ "$IS_MAC" = "true" ] && [ -f "$DOTFILES_DIR/platform/macos.sh" ] && source_timed "$DOTFILES_DIR/platform/macos.sh"
 [ "$IS_LINUX" = "true" ] && [ -f "$DOTFILES_DIR/platform/linux.sh" ] && source_timed "$DOTFILES_DIR/platform/linux.sh"
 [ "$IS_WIN" = "true" ] && [ -f "$DOTFILES_DIR/platform/windows.sh" ] && source_timed "$DOTFILES_DIR/platform/windows.sh"
@@ -95,3 +94,12 @@ if [ "$PROFILE_DOTFILES" = "true" ]; then
     fi
     echo -e "\033[1;35m✨ Total Dotfiles Load Time: \033[1;36m$_TOTAL_MS ms\033[0m\n"
 fi
+
+# ============================================================================
+# 🧹 FINAL CLEANUP
+# ============================================================================
+# Remove internal helper functions only needed for sourcing
+unset -f _path_add _path_clean source_timed 2>/dev/null
+
+# Clean up temporary environment variables used during initialization
+unset _DOT_START_TIME _DOT_END_TIME _TOTAL_MS 2>/dev/null

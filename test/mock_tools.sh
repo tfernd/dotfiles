@@ -7,7 +7,12 @@ MOCK_BIN_DIR="/tmp/dotfiles_mock_bin"
 mkdir -p "$MOCK_BIN_DIR"
 
 # List of tools to mock
-TOOLS=(zoxide starship bat eza fzf rg fd tldr lazygit gh jq xh yazi btm delta yq uv)
+TOOLS=(
+    zoxide starship bat eza fzf rg fd tldr lazygit gh jq xh yazi btm delta yq uv bun
+    7z zip unzip tar rar unrar curl ip ipconfig lsof ss fuser xclip wl-copy xsel 
+    pbcopy clip.exe powershell.exe cmd.exe ps brew trash-put trash-list trash-restore 
+    trash-empty trash bunzip2 uncompress gunzip bzip2 gzip compress xz unxz zstd unzstd
+)
 
 for tool in "${TOOLS[@]}"; do
     cat > "$MOCK_BIN_DIR/$tool" <<EOF
@@ -21,13 +26,41 @@ if [[ "\$*" == *"init"* ]]; then
     exit 0
 fi
 
+# FZF specific mock: return first line of stdin if piped, else return dummy path
+if [[ "\$0" == *"fzf"* ]]; then
+    if [ ! -t 0 ]; then
+        head -n 1
+    else
+        echo "dummy_file.txt"
+    fi
+    exit 0
+fi
+
 # Default mock output
 echo "# Mocked output for \$0"
+
+# Support for 'compress' tests: if the first or second arg is a supported extension, and we are an archiver, create that file.
+case "\$0" in
+    *tar|*zip|*7z|*rar|*gzip|*bzip2|*compress|*unzip|*unrar|*gunzip|*bunzip2|*uncompress|*xz|*zstd|*unxz|*unzstd)
+        for arg in "\$@"; do
+            if [[ "\$arg" == *.* ]]; then
+                touch "\$arg" 2>/dev/null || true
+            fi
+        done
+        ;;
+    *trash-put)
+        # For functional tests, trash-put should actually remove the file
+        for arg in "\$@"; do
+            [ -f "\$arg" ] && rm -f "\$arg"
+        done
+        ;;
+esac
+exit 0
 EOF
     chmod +x "$MOCK_BIN_DIR/$tool"
 done
 
-# Special case for batcat
+# Special case for batcat/bat mapping
 cp "$MOCK_BIN_DIR/bat" "$MOCK_BIN_DIR/batcat"
 
 export PATH="$MOCK_BIN_DIR:$PATH"

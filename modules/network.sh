@@ -3,14 +3,16 @@
 # NETWORK UTILITY FUNCTIONS
 # ============================================================================
 
-# myip — show public IPv4 and IPv6 addresses
+# --- Public IP Discovery ---
+# Quickly retrieves the public IPv4 and IPv6 addresses from the network edge.
 function myip() {
     echo -e "\033[1;36m🌐 Public IP Addresses:\033[0m"
     echo -e "  \033[1;32mIPv4\033[0m : $(curl -s -4 ifconfig.me || echo 'Not available')"
     echo -e "  \033[1;32mIPv6\033[0m : $(curl -s -6 ifconfig.me || echo 'Not available')"
 }
 
-# localip — show current local LAN IP
+# --- Local IP Discovery ---
+# Identifies the machine's current LAN address across different interfaces.
 unalias localip 2>/dev/null || true
 function localip() {
     if [ "$IS_LINUX" = "true" ]; then
@@ -22,12 +24,19 @@ function localip() {
     fi
 }
 
-# port — find process listening on a port
+# --- Port Scanner ---
+# Identifies processes listening on a specific port or lists all active listeners.
 function port() {
     if [ -z "$1" ]; then
-        echo -e "📝 \033[1;33mUsage:\033[0m port <number>"
-        return 1
+        echo -e "🔍 \033[1;36mListing all listening ports:\033[0m"
+        if [ "$IS_WIN" = "true" ]; then
+            netstat -ano | findstr LISTENING
+        else
+            lsof -i -P -n | grep LISTEN
+        fi
+        return 0
     fi
+
     if [ "$IS_WIN" = "true" ]; then
         netstat -ano | findstr /R /C:":$1 "
     else
@@ -35,7 +44,8 @@ function port() {
     fi
 }
 
-# kill-port — kill any process occupying a given port
+# --- Process Terminator (Port) ---
+# Forcefully closes any process currently occupying a specific network port.
 unalias kill-port 2>/dev/null || true
 function kill-port() {
     if [ -z "$1" ]; then
