@@ -24,6 +24,7 @@ if [ -n "$ZSH_VERSION" ]; then
     alias 'aws who'='aws-who'
 fi
 
+
 # awswho — Instantly verify AWS credentials for a specific profile.
 alias awswho='aws sts get-caller-identity --profile awsmyid'
 

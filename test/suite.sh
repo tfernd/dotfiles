@@ -113,8 +113,11 @@ assert_defined gr
 assert_defined gb
 assert_defined gba
 assert_defined gds
-assert_defined pr
 assert_defined prs
+assert_defined gstats
+assert_defined ghn
+assert_defined ghm
+assert_defined ghr
 assert_defined ghv
 assert_defined ghme
 
@@ -140,6 +143,9 @@ assert_defined path
 # 'please' only on non-windows
 if [ "$IS_WIN" != "true" ]; then
     assert_defined please
+fi
+if [ "$HAS_AWS" = "true" ] || [ -f "/tmp/dotfiles_mock_bin/aws" ]; then
+    assert_defined awswho
 fi
 
 echo -e "\n🔍 Checking AI Guards..."
@@ -178,6 +184,7 @@ echo -e "\n🔍 Checking Meta/Management Functions..."
 assert_defined dotdoctor
 assert_defined envup
 assert_defined pyclean
+assert_defined dotfiles-share-root
 assert_defined setup-terminal
 assert_defined update-dotfiles
 assert_defined refresh

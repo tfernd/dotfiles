@@ -63,6 +63,7 @@ fi
 if [ "$HAS_BAT" = "true" ]; then
     [ "$HAS_BATCAT" = "true" ] && alias bat='batcat'
     alias cat='bat --style=plain --paging=never'
+    alias ccat='bat'
 fi
 
 [ "$HAS_FD" = "true" ]   && alias fd='fd --color=auto'

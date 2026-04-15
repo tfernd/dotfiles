@@ -41,3 +41,32 @@ function note() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >> "$notes_file"
     echo -e "✅ \033[1;32mNote saved to:\033[0m $notes_file"
 }
+# dotfiles-share-root — Safely share this dotfiles suite with the root user.
+# This symlinks the configuration and injects the loader into /root/.bashrc
+function dotfiles-share-root() {
+    local source_dir="$HOME/.dotfiles"
+    
+    if [ ! -d "$source_dir" ]; then
+        echo "❌ Error: $source_dir not found. Run installer first."
+        return 1
+    fi
+
+    echo -e "🛡️  \033[1;36mSharing dotfiles with ROOT user...\033[0m"
+
+    # 1. Symlink dotfiles to /root/
+    sudo ln -sfn "$source_dir" /root/.dotfiles
+    echo "🔗 Symlinked $source_dir -> /root/.dotfiles"
+
+    # 2. Inject loader into root's shells
+    local loader="[ -f /root/.dotfiles/init.sh ] && source /root/.dotfiles/init.sh"
+    sudo bash -c "grep -q 'dotfiles/init.sh' /root/.bashrc || (echo -e '\n# SHARED DOTFILES LOADER\n$loader' >> /root/.bashrc)"
+    sudo bash -c "grep -q 'dotfiles/init.sh' /root/.zshrc 2>/dev/null || ([ -f /root/.zshrc ] && echo -e '\n# SHARED DOTFILES LOADER\n$loader' >> /root/.zshrc)"
+    echo "📝 Injected loader into /root/.bashrc"
+
+    # 3. Setup Starship for root
+    sudo mkdir -p /root/.config
+    sudo ln -sfn "$source_dir/starship.toml" /root/.config/starship.toml
+    echo "🎨 Synced Starship config for root"
+
+    echo -e "\n✅ \033[1;32mDone! Run 'sudo -i' to enter your new root environment.\033[0m"
+}

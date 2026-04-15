@@ -68,6 +68,8 @@ function myhelp() {
     print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
     if [ "$HAS_GH" = "true" ]; then
         print_cmd "pr, prs" "Create a GitHub PR, List open PRs"
+        print_cmd "gstats"  "Unified GitHub summary (Notifs, Mentions, Reviews)"
+        print_cmd "ghn,ghm,ghr" "Manage Gh Notifs, Mentions, and Reviews"
         print_cmd "ghv, ghme" "View repo on GitHub, List my PRs"
     fi
     print_cmd "help git" "Decode your git prompt symbols (cheat sheet)"
@@ -93,6 +95,7 @@ function myhelp() {
 
     echo -e "\n\033[1;33m🛡️ SETUP & SAFETY\033[0m"
     print_cmd "setup-terminal" "Install all missing tools"
+    print_cmd "dotfiles-share-root" "Setup same environment for the ROOT user"
     print_cmd "refresh"        "Rebuild tool cache + reload shell"
     [ "$IS_WIN" != "true" ] && print_cmd "please" "Re-run previous command with sudo"
     if [ "$HAS_TRASH" = "true" ]; then

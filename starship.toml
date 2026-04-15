@@ -1,23 +1,30 @@
 format = """
 $os\
 $username\
+$hostname\
 $directory\
 $git_branch\
 $git_status\
 $git_metrics\
+$fill\
 $time\
 $cmd_duration\
 $line_break\
+$shlvl\
 $package\
 $aws\
-$custom\
 $terraform\
 $nodejs\
 $bun\
+$memory_usage\
+$jobs\
 $battery\
 $line_break\
+$sudo\
 $status\
 $character"""
+
+right_format = """$cmd_duration"""
 
 command_timeout = 2000
 palette = "hyper"
@@ -41,8 +48,13 @@ format = "[](magenta)[$symbol]($style)[](fg:magenta bg:cyan)"
 [username]
 show_always = true
 style_user = "bg:cyan fg:black"
-style_root = "bg:cyan fg:black"
+style_root = "bg:red fg:white"
 format = "[$user]($style)[](fg:cyan bg:blue)"
+
+[hostname]
+ssh_only = true
+format = "[$ssh_symbol$hostname]($style) "
+style = "bg:cyan fg:black"
 
 [directory]
 style = "bg:blue fg:white"
@@ -141,15 +153,31 @@ display = [
 format = '[💠 terraform]($style) '
 style = "bold #623CE4"
 
-[custom.aws_role]
-command = "grep -A 10 \"\\[profile $AWS_PROFILE\\]\" ~/.aws/config | grep \"role_arn\" | cut -d/ -f2"
-when = "grep -q \"role_arn\" ~/.aws/config"
-style = "bold yellow"
-format = "([$output]($style))"
-description = "Show current AWS role from local config"
-
 [status]
 disabled = false
 style = "bold red"
 format = "[$status ]($style)"
 symbol = "✘"
+
+[sudo]
+disabled = false
+format = "[$symbol]($style)"
+symbol = "🧙 "
+style = "bold red bg:dark_grey"
+allow_windows = false
+
+[memory_usage]
+disabled = false
+threshold = 10
+symbol = "🐏 "
+style = "bold red"
+format = "[$symbol$ram_pct]($style) "
+
+[shlvl]
+disabled = false
+symbol = "↕️ "
+style = "bold yellow"
+format = "[$symbol$shlvl]($style) "
+
+[fill]
+symbol = " "

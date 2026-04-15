@@ -78,6 +78,8 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `gu` : Undo last commit (keeps changes staged)
 - `gam` : Amend current commit quietly
 - `gr` : **Git Redo** (Fuzzy Time Machine) — reset to any point in reflog
+- `gstats` : Comprehensive GitHub Dashboard (Notifications, Mentions, Reviews)
+- `ghn`, `ghm`, `ghr` : Direct access to your GitHub pings and reviews
 - `pr` / `prs` : GitHub CLI wrappers for browser-based PR creation and listing
 - `ghv` / `ghme` : Open repo on GitHub / List my active Pull Requests
 
@@ -99,6 +101,7 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `daemonize <cmd>` : Run a command in background and save logs
 
 #### 🎮 Fun & Aesthetics
+
 - `matrix` : Falling green code (requires `cmatrix` installed)
 - `starwars` : Watch Star Wars IV in ASCII (telnet)
 
@@ -110,7 +113,7 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `setup-terminal` : Re-run installer to repair or update the environment
 - `refresh` : Rebuild the tool cache and reload the shell configuration
 - `hclear` : Securely wipe all terminal history with confirmation
-- `calc <expr>` : Command-line calculator (**e.g. calc "250 * 1.5"**)
+- `calc <expr>` : Command-line calculator (**e.g. calc "250 \* 1.5"**)
 - `server <port>` : Instant Python web server (default :8000)
 - `json` : Pretty-print minified JSON from stdin or file
 - `c` : Shortcut for `clear`

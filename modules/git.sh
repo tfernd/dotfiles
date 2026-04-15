@@ -50,4 +50,31 @@ if [ "$HAS_GH" = "true" ]; then
     alias prs='gh pr list'
     alias ghv='gh repo view --web'
     alias ghme='gh pr list --author "@me"'
+
+    # GitHub Dashboard Extensions
+    alias ghn='gh api notifications'
+    alias ghm='gh search issues --mentions @me --state open'
+    alias ghr='gh pr list --search "review-requested:@me"'
+
+    # gstats — Unified GitHub Statistics Dashboard
+    function gstats() {
+        if ! gh auth status >/dev/null 2>&1; then
+            echo -e "❌ \033[1;31mNot logged into GitHub CLI.\033[0m Run 'gh auth login' to enable stats."
+            return 1
+        fi
+
+        echo -e "📊 \033[1;36mFetching GitHub Dashboard for @me...\033[0m\n"
+
+        local notifs=$(gh api notifications --jq 'length' 2>/dev/null || echo "0")
+        local mentions=$(gh search issues --mentions @me --state open --json number --jq 'length' 2>/dev/null || echo "0")
+        local reviews=$(gh pr list --search "review-requested:@me" --json number --jq 'length' 2>/dev/null || echo "0")
+        local myprs=$(gh pr list --author "@me" --json number --jq 'length' 2>/dev/null || echo "0")
+
+        echo -e "  📬 \033[1;34mUnread Notifications:\033[0m $notifs"
+        echo -e "  ✉️  \033[1;32mMentions (Open):\033[0m     $mentions"
+        echo -e "  🔍 \033[1;33mReview Requests:\033[0m    $reviews"
+        echo -e "  🏗️  \033[1;35mYour Open PRs:\033[0m      $myprs"
+        
+        echo -e "\n💡 \033[0;37mUse 'ghn', 'ghm', or 'ghr' to view details.\033[0m"
+    }
 fi
