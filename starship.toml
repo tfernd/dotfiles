@@ -14,7 +14,6 @@ $custom\
 $terraform\
 $nodejs\
 $bun\
-$python\
 $battery\
 $line_break\
 $status\
@@ -87,6 +86,7 @@ symbol = ""
 format = "via [$symbol ($version)]($style) "
 
 [python]
+disabled = true
 style = "bold yellow"
 symbol = ""
 format = 'via [$symbol ($version) (\($virtualenv\) )]($style)'

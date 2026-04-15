@@ -48,4 +48,6 @@ alias gl='git log --graph --abbrev-commit --decorate --date=relative --format=fo
 if [ "$HAS_GH" = "true" ]; then
     alias pr='gh pr create --web'
     alias prs='gh pr list'
+    alias ghv='gh repo view --web'
+    alias ghme='gh pr list --author "@me"'
 fi

@@ -12,6 +12,7 @@ TOOLS=(
     7z zip unzip tar rar unrar curl ip ipconfig lsof ss fuser xclip wl-copy xsel 
     pbcopy clip.exe powershell.exe cmd.exe ps brew trash-put trash-list trash-restore 
     trash-empty trash bunzip2 uncompress gunzip bzip2 gzip compress xz unxz zstd unzstd
+    bc python3 aws df free
 )
 
 for tool in "${TOOLS[@]}"; do

@@ -48,12 +48,15 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 ### 📂 Files & Navigation
 
 - `cd` : Smarter directory jumping (powered by **Zoxide**)
+- `up <num>` : Go up N directory levels (**e.g. up 3**)
+- `..` / `~` / `-` : Rapid movement: Up, Home, or Previous directory
 - `ls` / `ll` / `lt` : Modern `ls` with icons/colors (**Eza**) — `ll`=long, `lt`=tree
 - `cat` : Modern `cat` with syntax highlighting (**Bat**)
 - `y` : Terminal visual file explorer (**Yazi**)
 - `fd` : Simple and fast alternative to `find`
 - `cw` : Instantly switch editor window to current folder (Cursor/Code/Antigravity)
 - `backup <file>` : Create a dated copy: `filename.YYYYMMDD_HHMMSS.bak`
+- `note <msg>` : Jot down a quick note to `~/.notes.txt` with timestamp
 - `symlink <link> <target>` : Cross-platform symlink creator (handles Windows Junctions)
 - `extract <file>` : Instant extraction for `.zip`, `.tar.gz`, `.rar`, `.7z`, etc.
 - `compress <name> <files...>` : Smart compression (defaults to `.tar.gz` if no extension)
@@ -76,6 +79,7 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `gam` : Amend current commit quietly
 - `gr` : **Git Redo** (Fuzzy Time Machine) — reset to any point in reflog
 - `pr` / `prs` : GitHub CLI wrappers for browser-based PR creation and listing
+- `ghv` / `ghme` : Open repo on GitHub / List my active Pull Requests
 
 ### 🌐 Network & System
 
@@ -84,11 +88,19 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `port <num>` : See what process is listening on a specific port
 - `kill-port <num>` : Force kill any process occupying a port
 - `memhog` : Show top 15 memory-consuming processes
+- `df` / `free` : Human-readable Disk and Memory usage
+- `weather` : Beautiful 3-day ASCII weather forecast in your terminal
 - `top` : Interactive system monitor (prefers `btm` if installed)
 - `http` : Modern API testing and cURL replacement (**XH**)
 - `copy` / `cpwd` : Clipboard utilities (`copy` reads stdin, `cpwd` copies current path)
 - `path` : Pretty-print your `$PATH` one entry per line
 - `please` : Re-run previous command with `sudo` (Linux/macOS only)
+- `reload` / `x` : Reload shell config / Instant terminal exit
+- `daemonize <cmd>` : Run a command in background and save logs
+
+#### 🎮 Fun & Aesthetics
+- `matrix` : Falling green code (requires `cmatrix` installed)
+- `starwars` : Watch Star Wars IV in ASCII (telnet)
 
 ### 🛠️ Environment & Dev-Ops
 
@@ -98,6 +110,9 @@ Type `help` in your terminal to see this list live or `dotdoctor` to check syste
 - `setup-terminal` : Re-run installer to repair or update the environment
 - `refresh` : Rebuild the tool cache and reload the shell configuration
 - `hclear` : Securely wipe all terminal history with confirmation
+- `calc <expr>` : Command-line calculator (**e.g. calc "250 * 1.5"**)
+- `server <port>` : Instant Python web server (default :8000)
+- `json` : Pretty-print minified JSON from stdin or file
 - `c` : Shortcut for `clear`
 
 ### 🤖 AI Guard Aliases

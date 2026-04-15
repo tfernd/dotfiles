@@ -67,6 +67,38 @@ alias cpwd='pwd | copy'
 alias c='clear'
 alias path='echo $PATH | tr ":" "\n"'
 
+# --- System & Environment ---
+alias df='df -h'
+alias x='exit'
+alias reload='exec $SHELL -l'
+alias weather='curl wttr.in'
+
+# free — Memory usage (Linux only, falls back to memhog on others)
+if [ "$IS_LINUX" = "true" ]; then
+    alias free='free -m'
+else
+    alias free='memhog'
+fi
+
+# daemonize — Run a command in the background and log output.
+unalias daemonize 2>/dev/null || true
+function daemonize() {
+    if [ -z "$1" ]; then
+        echo -e "📝 \033[1;33mUsage:\033[0m daemonize <command> [args...]"
+        return 1
+    fi
+    local log="daemon_$(date +%Y%m%d_%H%M%S).log"
+    nohup "$@" > "$log" 2>&1 &
+    local pid=$!
+    echo -e "🚀 \033[1;32mStarted:\033[0m '$1' in background (PID: $pid)"
+    echo -e "📝 \033[1;34mLogging to:\033[0m $log"
+}
+
+# --- Fun & Aesthetics ---
+alias matrix='cmatrix -b'
+alias starwars='telnet towel.blinkenlights.nl'
+
+
 # 'Please' as a sudo shortcut for the last command
 if [ "$IS_WIN" != "true" ]; then
     alias please='sudo $(fc -ln -1)'

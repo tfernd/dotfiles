@@ -13,6 +13,8 @@ function myhelp() {
 
     echo -e "\033[1;33m📂 FILES & NAVIGATION\033[0m"
     [ "$HAS_ZOXIDE" = "true" ] && print_cmd "cd" "Smarter cd (zoxide)"
+    print_cmd "up, .., ~" "Go up N levels, up 1 level, or Home"
+    print_cmd "-" "Jump to the last directory you were in"
     print_cmd "cw" "Switch editor workspace to current folder (Antigravity/Cursor/Code)"
     if [ "$HAS_EZA" = "true" ]; then
         print_cmd "ls, ll" "Modern ls with icons (ll = long format, lt = tree)"
@@ -29,6 +31,7 @@ function myhelp() {
     fi
     print_cmd "compress"  "Zip files instantly (e.g. compress archive docs/)"
     print_cmd "backup"    "Backup a file (e.g. backup file.txt -> file.txt_date.bak)"
+    print_cmd "note"      "Jot down a quick note with timestamp"
 
     echo -e "\n\033[1;33m🔍 SEARCH & SYSTEM\033[0m"
     print_cmd "memhog"   "Show top 15 memory-hogging processes"
@@ -49,7 +52,11 @@ function myhelp() {
     print_cmd "path"        "Print PATH variable neatly"
     print_cmd "c"           "Clear the terminal screen"
     print_cmd "myip, localip" "Get public and local IP address"
+    print_cmd "df, free"    "Disk and Memory usage (human readable)"
+    print_cmd "weather"     "Beautiful 3-day terminal weather forecast"
     print_cmd "sleep"       "Cross-platform sleep (with Python fallback)"
+    print_cmd "reload, x"   "Reload shell, Exit terminal"
+    print_cmd "daemonize"   "Run command in background and save logs"
 
     echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
     [ "$HAS_LAZYGIT" = "true" ] && print_cmd "lg"  "Open Lazygit TUI (Visual Git)"
@@ -61,6 +68,7 @@ function myhelp() {
     print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
     if [ "$HAS_GH" = "true" ]; then
         print_cmd "pr, prs" "Create a GitHub PR, List open PRs"
+        print_cmd "ghv, ghme" "View repo on GitHub, List my PRs"
     fi
     print_cmd "help git" "Decode your git prompt symbols (cheat sheet)"
 
@@ -68,6 +76,7 @@ function myhelp() {
     if [ "$HAS_AWS" = "true" ]; then
         print_cmd "aws login"   "Login via modern CLI session"
         print_cmd "aws who"     "Check current AWS identity (Account, Role, Profile)"
+        print_cmd "awswho"      "Instantly verify 'awsmyid' profile credentials"
         print_cmd "aws s3 ls"   "List your S3 buckets"
     fi
     [ "$HAS_TERRAFORM" = "true" ] && print_cmd "tf" "Terraform (infrastructure as code)"
@@ -75,9 +84,12 @@ function myhelp() {
     echo -e "\n\033[1;33m🐍 DEVELOPMENT & DATA\033[0m"
     [ "$HAS_JQ" = "true" ] && print_cmd "jq"      "Command-line JSON processor"
     [ "$HAS_YQ" = "true" ] && print_cmd "yq"      "Command-line YAML processor"
-    print_cmd "python, pip" "Guarded aliases pointing AI tools to UV"
+    print_cmd "python, pip" "Strictly mapped to UV (AI Guard active if UV installed)"
     print_cmd "envup"   "Load variables from a .env file"
     print_cmd "pyclean" "Delete all __pycache__ and compiled files"
+    print_cmd "server"  "Start a simple Python web server (default :8000)"
+    print_cmd "json"    "Pretty-print minified JSON from stdin"
+    print_cmd "calc"    "Command line calculator (usage: calc \"1 + 1\")"
 
     echo -e "\n\033[1;33m🛡️ SETUP & SAFETY\033[0m"
     print_cmd "setup-terminal" "Install all missing tools"

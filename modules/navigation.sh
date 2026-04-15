@@ -67,3 +67,19 @@ fi
 
 [ "$HAS_FD" = "true" ]   && alias fd='fd --color=auto'
 [ "$HAS_YAZI" = "true" ] && alias y='yazi'
+
+# --- Shortcut Aliases ---
+alias ..='cd ..'
+alias ~='cd ~'
+alias -- -='cd -'
+
+# up — Move up a specified number of directories. (Usage: up 3)
+unalias up 2>/dev/null || true
+function up() {
+    local limit="${1:-1}"
+    local d=""
+    for ((i=1 ; i <= limit ; i++)); do
+        d="../$d"
+    done
+    cd "$d" || return
+}

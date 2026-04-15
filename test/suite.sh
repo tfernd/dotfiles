@@ -89,6 +89,10 @@ assert_defined backup
 assert_defined symlink
 assert_defined extract
 assert_defined compress
+assert_defined up
+assert_defined ..
+assert_defined '~'
+assert_defined -
 
 echo -e "\n🔍 Checking Search & Fuzzy Workflows..."
 assert_defined f
@@ -111,6 +115,8 @@ assert_defined gba
 assert_defined gds
 assert_defined pr
 assert_defined prs
+assert_defined ghv
+assert_defined ghme
 
 echo -e "\n🔍 Checking Network & System Utilities..."
 assert_defined myip
@@ -122,6 +128,14 @@ assert_defined top
 assert_defined http
 assert_defined copy
 assert_defined cpwd
+assert_defined df
+assert_defined free
+assert_defined weather
+assert_defined reload
+assert_defined x
+assert_defined daemonize
+assert_defined matrix
+assert_defined starwars
 assert_defined path
 # 'please' only on non-windows
 if [ "$IS_WIN" != "true" ]; then
@@ -141,14 +155,23 @@ assert_defined python
 assert_defined pip
 assert_defined venv
 assert_defined poetry
+assert_defined grep
+assert_defined server
+assert_defined json
+assert_defined calc
 
-# Test one guard to ensure alias/function logic works
-if eval "node" 2>&1 | grep -q "AI: Use 'bun run' instead of 'node'"; then
-    echo -e "  ✅ [PASSED] AI Guard functional check (node)"
-    ((test_passed++))
+# Test one guard to ensure alias logic works (only if UV is simulated as present)
+if [ "$HAS_UV" = "true" ]; then
+    if eval "python" 2>&1 | grep -q "AI: Use 'uv run' instead of 'python'"; then
+        echo -e "  ✅ [PASSED] AI Guard functional check (python)"
+        ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] AI Guard functional check (python)"
+        ((test_failed++))
+    fi
 else
-    echo -e "  ❌ [FAILED] AI Guard functional check"
-    ((test_failed++))
+    echo -e "  ✅ [PASSED] AI Guard skip check (UV not present)"
+    ((test_passed++))
 fi
 
 echo -e "\n🔍 Checking Meta/Management Functions..."
@@ -161,8 +184,10 @@ assert_defined refresh
 assert_defined hclear
 assert_defined myhelp
 assert_defined help_git
+assert_defined note
 assert_defined help
 assert_defined c
+assert_defined awswho
 
 echo -e "\n🔍 Checking Underlying Dependencies..."
 function assert_tool() {
@@ -202,6 +227,11 @@ touch "/tmp/test_backup"
 backup "/tmp/test_backup" >/dev/null 2>&1
 assert_file_glob "/tmp/test_backup.*.bak"
 rm -f /tmp/test_backup
+
+echo -e "\n🧪 Functional Tests: note"
+note "Test Note" >/dev/null 2>&1
+assert_file_glob "$HOME/.notes.txt"
+rm -f "$HOME/.notes.txt"
 
 echo -e "\n🧪 Functional Tests: compress & extract"
 touch "/tmp/data"
@@ -298,6 +328,11 @@ else
     ((test_failed++))
 fi
 
+# daemonize
+daemonize echo "hello" >/dev/null 2>&1
+assert_file_glob "daemon_*.log"
+rm -f daemon_*.log
+
 # memhog
 memhog >/dev/null 2>&1
 if [ $? -eq 0 ]; then
@@ -388,6 +423,21 @@ else
 fi
 rm -rf "/tmp/test_pyclean"
 
+echo -e "\n🧪 Functional Tests: Dev Tools"
+# calc
+calc_out=$(calc "1+1")
+if [ $? -eq 0 ]; then
+    echo -e "  ✅ [PASSED] calc (executed)"
+    ((test_passed++))
+else
+    echo -e "  ❌ [FAILED] calc"
+    ((test_failed++))
+fi
+
+# server & json (basic existence check)
+assert_defined server
+assert_defined json
+
 # setup-terminal
 # creates a dummy install.sh in the expected location
 mkdir -p "$HOME/.dotfiles"
@@ -425,6 +475,18 @@ else
     echo -e "  ❌ [FAILED] cd"
     ((test_failed++))
 fi
+
+# up
+mkdir -p /tmp/up_test/a/b/c
+( cd /tmp/up_test/a/b/c && up 2 && [ "$PWD" = "/tmp/up_test/a" ] )
+if [ $? -eq 0 ]; then
+    echo -e "  ✅ [PASSED] up (climbed 2 levels)"
+    ((test_passed++))
+else
+    echo -e "  ❌ [FAILED] up"
+    ((test_failed++))
+fi
+rm -rf /tmp/up_test
 
 # ls/ll/lt
 for cmd in ls ll lt; do

@@ -27,3 +27,17 @@ function update-dotfiles() {
         return 1
     fi
 }
+
+# note — Jot down a quick note with timestamp and configurable storage.
+# Usage: note "Call the bank at 3PM"
+# Config: set DOTFILES_NOTES_FILE to override default (~/.notes.txt)
+unalias note 2>/dev/null || true
+function note() {
+    if [ -z "$1" ]; then
+        echo -e "📝 \033[1;33mUsage:\033[0m note \"your note content\""
+        return 1
+    fi
+    local notes_file="${DOTFILES_NOTES_FILE:-$HOME/.notes.txt}"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" >> "$notes_file"
+    echo -e "✅ \033[1;32mNote saved to:\033[0m $notes_file"
+}

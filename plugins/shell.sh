@@ -14,7 +14,7 @@ _PROMPT_LOADED=true
 # Bootstraps the Zsh framework and its core plugin ecosystem.
 if [ "$CURRENT_SHELL" = "zsh" ] && [ -d "$HOME/.oh-my-zsh" ]; then
     export ZSH="$HOME/.oh-my-zsh"
-    plugins=(git python pip)
+    plugins=(git)
     source "$ZSH/oh-my-zsh.sh"
 
     # OMZ already runs compinit; configure completion style

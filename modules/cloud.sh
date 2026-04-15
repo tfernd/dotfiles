@@ -18,11 +18,14 @@ function aws-who() {
     echo -e "\033[1;33mRegion: \033[0m $(aws configure get region 2>/dev/null || echo 'not set')"
 }
 
-# Add shorter alias for help menu compatibility
-alias 'aws who'='aws-who'
+# sso-login alias for convenience (Zsh only as Bash doesn't support spaces in aliases)
+if [ -n "$ZSH_VERSION" ]; then
+    alias 'aws login'='aws login'
+    alias 'aws who'='aws-who'
+fi
 
-# sso-login alias for convenience
-alias 'aws login'='aws login' # This is already a command, but we mention it for help menu visibility
+# awswho — Instantly verify AWS credentials for a specific profile.
+alias awswho='aws sts get-caller-identity --profile awsmyid'
 
 # --- Terraform Related ---
 if [ "$HAS_TERRAFORM" = "true" ]; then
