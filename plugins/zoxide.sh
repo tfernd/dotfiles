@@ -2,7 +2,6 @@
 # ============================================================================
 # ZOXIDE SMART JUMP (CD) INTEGRATION
 # ============================================================================
-
 # --- Zoxide Guard ---
 # Prevents expensive re-initialization of the database interface on shell re-load.
 if [ "$_ZOXIDE_LOADED" = "true" ]; then
@@ -35,5 +34,5 @@ if [ "$HAS_ZOXIDE" = "true" ]; then
     source "$ZOXIDE_CACHE"
     
     # Alias cd to z for smart jumping
-    cd() { z "$@" 2>/dev/null || builtin cd "$@"; }
+    cd() { z "$@" || builtin cd "$@"; }
 fi

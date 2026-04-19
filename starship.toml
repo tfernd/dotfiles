@@ -8,7 +8,6 @@ $git_status\
 $git_metrics\
 $fill\
 $time\
-$cmd_duration\
 $line_break\
 $shlvl\
 $package\
@@ -27,6 +26,7 @@ $character"""
 right_format = """$cmd_duration"""
 
 command_timeout = 2000
+scan_timeout = 1000
 palette = "hyper"
 
 [palettes.hyper]
@@ -39,25 +39,26 @@ grey = "#6c7086"
 magenta = "#cba6f7"
 cyan = "#89dceb"
 dark_grey = "#313244"
+base = "#1e1e2e"
 
 [os]
 disabled = false
-style = "bg:magenta fg:white"
+style = "bg:magenta fg:base"
 format = "[](magenta)[$symbol]($style)[](fg:magenta bg:cyan)"
 
 [username]
 show_always = true
-style_user = "bg:cyan fg:black"
+style_user = "bg:cyan fg:base"
 style_root = "bg:red fg:white"
 format = "[$user]($style)[](fg:cyan bg:blue)"
 
 [hostname]
 ssh_only = true
 format = "[$ssh_symbol$hostname]($style) "
-style = "bg:cyan fg:black"
+style = "bg:cyan fg:base"
 
 [directory]
-style = "bg:blue fg:white"
+style = "bg:blue fg:base"
 format = "[ $path]($style)[](fg:blue bg:yellow)"
 truncation_length = 2
 truncation_symbol = "…/"
@@ -65,7 +66,7 @@ truncate_to_repo = true
 use_os_path_sep = false
 
 [git_branch]
-style = "bg:yellow fg:black"
+style = "bg:yellow fg:base"
 symbol = ""
 format = "[ $symbol $branch(:$remote_branch)]($style)[](fg:yellow bg:none) "
 always_show_remote = false
@@ -164,11 +165,10 @@ disabled = false
 format = "[$symbol]($style)"
 symbol = "🧙 "
 style = "bold red bg:dark_grey"
-allow_windows = false
 
 [memory_usage]
 disabled = false
-threshold = 10
+threshold = 50
 symbol = "🐏 "
 style = "bold red"
 format = "[$symbol$ram_pct]($style) "

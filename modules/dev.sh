@@ -3,6 +3,37 @@
 # DEVELOPMENT UTILITY FUNCTIONS
 # ============================================================================
 
+# --- AI Bun/UV Enforcement Guards (loaded in ALL modes) ---
+function _ai_warn() { echo -e "\033[1;33m🤖 AI: Use '$1' instead of '$2'.\033[0m" >&2; }
+
+# --- JS/TS Enforcement Guards (Pro-Bun) ---
+if [ "$HAS_BUN" = "true" ]; then
+    unalias node npm npx yarn pnpm nodemon ts-node tsx 2>/dev/null || true
+    alias node='_ai_warn "bun run" "node"'
+    alias npm='_ai_warn "bun" "npm"'
+    alias npx='_ai_warn "bun x" "npx"'
+    alias yarn='_ai_warn "bun" "yarn"'
+    alias pnpm='_ai_warn "bun" "pnpm"'
+    alias nodemon='_ai_warn "bun --watch" "nodemon"'
+    alias ts-node='_ai_warn "bun" "ts-node"'
+    alias tsx='_ai_warn "bun" "tsx"'
+fi
+
+# --- Python Enforcement Guards (Pro-UV) ---
+if [ "$HAS_UV" = "true" ]; then
+    unalias python python3 pip pip3 venv poetry 2>/dev/null || true
+    alias python='_ai_warn "uv run" "python"'
+    alias pip='_ai_warn "uv" "pip"'
+    alias venv='_ai_warn "uv venv" "venv"'
+    alias poetry='_ai_warn "uv" "poetry"'
+    alias python3='python'
+    alias pip3='pip'
+fi
+
+# ============================================================================
+# INTERACTIVE-ONLY BELOW
+# ============================================================================
+
 # pyclean — remove Python cache and temporary files
 unalias pyclean 2>/dev/null || true
 function pyclean() {
@@ -27,6 +58,7 @@ function pyclean() {
 }
 
 # envup — load variables from .env file into current session
+# SECURITY: Parses KEY=VALUE lines only. Does NOT source the file as shell code.
 unalias envup 2>/dev/null || true
 function envup() {
     if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -38,20 +70,26 @@ function envup() {
         echo "❌ No $envfile file found."
         return 1
     fi
-    # set -a auto-exports every variable; source handles quoting and comments.
-    set -a
-    source "$envfile"
-    set +a
-    echo "✅ Loaded $envfile variables into current session."
+    local count=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # Only process lines matching KEY=VALUE (key must be valid identifier)
+        if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*) ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local val="${BASH_REMATCH[2]}"
+            # Strip surrounding quotes (single or double)
+            if [[ "$val" =~ ^\"(.*)\"$ ]] || [[ "$val" =~ ^\'(.*)\'$ ]]; then
+                val="${BASH_REMATCH[1]}"
+            fi
+            export "$key=$val"
+            ((count++))
+        fi
+    done < "$envfile"
+    echo "✅ Loaded $count variables from $envfile"
 }
 
 # --- Development & Data Aliases ---
-
-# --- JSON/YAML Processing ---
-if [ "$IS_WIN" = "true" ]; then
-    [ "$HAS_JQ" = "true" ] && alias jq='MSYS2_ARG_CONV_EXCL="*" jq'
-    [ "$HAS_YQ" = "true" ] && alias yq='MSYS2_ARG_CONV_EXCL="*" yq'
-fi
 
 # --- HTTP Client ---
 [ "$HAS_XH" = "true" ]  && alias 'http'='xh'
@@ -84,39 +122,20 @@ function server() {
     fi
 }
 
-# calc — Command line calculator using bc.
+# calc — Command line calculator (bc with awk fallback)
+# SECURITY: Input is validated to prevent code injection via awk.
 unalias calc 2>/dev/null || true
 function calc() {
-    if ! command -v bc >/dev/null 2>&1; then
-        echo "❌ 'bc' calculator not found. Please install it."
+    local expr="$*"
+    # Validate: only allow numbers, math operators, whitespace, decimal points, parens
+    if [[ "$expr" =~ [^0-9\ +\-\*/\.\(\)%\^] ]]; then
+        echo "❌ Invalid characters in expression. Only numbers and math operators allowed." >&2
         return 1
     fi
-    echo "$*" | bc -l
+    if command -v bc >/dev/null 2>&1; then
+        echo "$expr" | bc -l
+    else
+        awk "BEGIN { print $expr }"
+    fi
 }
-
-# --- AI Bun/UV Enforcement Guards ---
-function _ai_warn() { echo -e "\033[1;33m🤖 AI: Use '$1' instead of '$2'.\033[0m" >&2; }
-
-# --- JS/TS Enforcement Guards (Pro-Bun) ---
-if [ "$HAS_BUN" = "true" ]; then
-    unalias node npm npx yarn pnpm nodemon ts-node tsx 2>/dev/null || true
-    alias node='_ai_warn "bun run" "node"'
-    alias npm='_ai_warn "bun" "npm"'
-    alias npx='_ai_warn "bun x" "npx"'
-    alias yarn='_ai_warn "bun" "yarn"'
-    alias pnpm='_ai_warn "bun" "pnpm"'
-    alias nodemon='_ai_warn "bun --watch" "nodemon"'
-    alias ts-node='_ai_warn "bun" "ts-node"'
-    alias tsx='_ai_warn "bun" "tsx"'
-fi
-
-# --- Python Enforcement Guards (Pro-UV) ---
-if [ "$HAS_UV" = "true" ]; then
-    unalias python python3 pip pip3 venv poetry 2>/dev/null || true
-    alias python='_ai_warn "uv run" "python"'
-    alias pip='_ai_warn "uv" "pip"'
-    alias venv='_ai_warn "uv venv" "venv"'
-    alias poetry='_ai_warn "uv" "poetry"'
-    alias python3='python'
-    alias pip3='pip'
-fi
+[ -n "$ZSH_VERSION" ] && alias calc='noglob calc'

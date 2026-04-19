@@ -43,11 +43,12 @@ TOOL_CACHE_KEY="${BASHRC_HASH}:${OSTYPE:-unknown}"
 
 if [ ! -f "$TOOL_CACHE" ] || ! grep -q "#hash:$TOOL_CACHE_KEY" "$TOOL_CACHE" 2>/dev/null; then
     mkdir -p "$(dirname "$TOOL_CACHE")"
+    # SECURITY: Restrict cache file permissions (sourced on every shell startup)
+    umask 077
     cat > "$TOOL_CACHE" <<EOF
 export HAS_ZOXIDE=$(has_tool zoxide)
 export HAS_EZA=$(has_tool eza)
 export HAS_TRASH_PUT=$(has_tool trash-put)
-export HAS_TRASH_NODE=$(has_tool trash)
 export HAS_TRASH=$(has_any trash-put trash)
 export HAS_RG=$(has_tool rg)
 export HAS_TLDR=$(has_tool tldr)
@@ -66,12 +67,9 @@ export HAS_YQ=$(has_tool yq)
 export HAS_UV=$(has_tool uv)
 export HAS_BUN=$(has_tool bun)
 export HAS_FD=$(has_tool fd)
-export HAS_AWS=$(has_tool aws)
-export HAS_TERRAFORM=$(has_tool terraform)
-export HAS_BREW=$([ "$IS_WIN" = "true" ] && echo false || has_tool brew)
-export HAS_FC_LIST=$([ "$IS_WIN" = "true" ] && echo false || has_tool fc-list)
 #hash:$TOOL_CACHE_KEY
 EOF
+    umask 022
 fi
 
 source "$TOOL_CACHE"

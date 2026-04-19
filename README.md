@@ -1,6 +1,14 @@
 # 🚀 Modern Dotfiles
 
-A high-performance, modular, and cross-platform dotfiles ecosystem designed for **macOS**, **Linux**, and **Windows**.
+A high-performance, modular, and cross-platform dotfiles ecosystem.
+
+### 🖥️ Supported Platforms
+
+| Platform                          | Shell     | Status          |
+| --------------------------------- | --------- | --------------- |
+| **macOS** (Apple Silicon & Intel) | Zsh, Bash | ✅ Full support |
+| **Linux** (Debian/Ubuntu)         | Zsh, Bash | ✅ Full support |
+| **WSL** (Debian)                  | Zsh, Bash | ✅ Full support |
 
 ---
 
@@ -8,137 +16,274 @@ A high-performance, modular, and cross-platform dotfiles ecosystem designed for 
 
 ### macOS & Linux
 
-Deploy the full environment and install all core tools with a single command (requires `gh auth` if private):
-
 ```bash
-rm -rf /tmp/dotfiles && gh repo clone tfernd/dotfiles /tmp/dotfiles && bash /tmp/dotfiles/install.sh && source ~/.dotfiles/init.sh && setup-terminal
+git clone https://github.com/tfernd/dotfiles.git /tmp/dotfiles
+bash /tmp/dotfiles/install.sh
 ```
 
-### Windows (PowerShell Administrator)
-
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/tfernd/dotfiles/main/win.ps1'))
-```
-
-_Follow by running `~/dotfiles/install.sh` in Git Bash._
+This copies everything to `~/.dotfiles/` (no `.git` in your home), sets up your shell configs, and installs all tools.
 
 ---
 
-## 🛠️ Core Tools
+## 🛠️ Installed Tools
 
-This environment replaces legacy commands with these modern alternatives:
+All tools are installed automatically by `install.sh`.
 
-| Tool             | Replacement For | Description                                              |
-| :--------------- | :-------------- | :------------------------------------------------------- |
-| **Starship**     | Default Prompt  | Extremely fast, customizable cross-shell prompt          |
-| **Zoxide**       | `cd`            | Smarter, learning directory jumper                       |
-| **Eza**          | `ls`            | Modern, colorized file listing with icons                |
-| **Bat**          | `cat`           | Syntax highlighting and Git integration for files        |
-| **Ripgrep (rg)** | `grep`          | The fastest recursive text searcher                      |
-| **Fzf**          | `search`        | Interactive selector for files and history               |
-| **Trash-cli**    | `rm`            | Safe deletion with specialized FZF recovery (`rt`/`rtt`) |
-| **UV / Bun**     | `pip / npm`     | Shell guards automatically pointing to fast alternatives |
+| Package / Binary                | Description                         | macOS | Linux/WSL | Install Source                 |
+| ------------------------------- | ----------------------------------- | :---: | :-------: | ------------------------------ |
+| **Core CLI Tools**              |                                     |       |           |                                |
+| `starship`                      | Cross-shell prompt engine           |  ✅   |    ✅     | Homebrew / installer           |
+| `zoxide`                        | Smart directory jumper (cd)         |  ✅   |    ✅     | Homebrew / installer           |
+| `bat`                           | Syntax-highlighted cat              |  ✅   |    ✅¹    | Homebrew / APT                 |
+| `eza`                           | Modern ls with icons                |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| `rg` (ripgrep)                  | Fast recursive text search          |  ✅   |    ✅     | Homebrew / APT                 |
+| `fd`                            | Fast find alternative               |  ✅   |    ✅²    | Homebrew / APT                 |
+| `fzf`                           | Fuzzy finder                        |  ✅   |    ✅     | Homebrew / APT                 |
+| `delta` (git-delta)             | Beautiful git diffs                 |  ✅   |    ✅     | Homebrew / .deb                |
+| `jq`                            | JSON processor                      |  ✅   |    ✅     | Homebrew / APT                 |
+| `yq`                            | YAML processor                      |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| `xh`                            | HTTP client (curl replacement)      |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| `tldr` (tealdeer)               | Quick command cheat sheets          |  ✅   |    ✅     | Homebrew / APT                 |
+| **Git & GitHub**                |                                     |       |           |                                |
+| `git`                           | Version control                     |  ✅   |    ✅     | Xcode CLT / APT                |
+| `gh`                            | GitHub CLI                          |  ✅   |    ✅     | Homebrew / APT repo            |
+| `lazygit`                       | Visual git TUI                      |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| **File & System**               |                                     |       |           |                                |
+| `trash` / `trash-put`           | Safe file deletion                  |  ✅   |    ✅³    | Homebrew / APT                 |
+| `yazi`                          | Terminal file explorer              |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| `btm` (bottom)                  | System monitor                      |  ✅   |    ✅     | Homebrew / Linuxbrew           |
+| **Archive & Compression**       |                                     |       |           |                                |
+| `7z` (p7zip / 7zip)             | 7-Zip archive support               |  ✅   |    ✅     | Homebrew / APT                 |
+| `zip` / `unzip`                 | ZIP archive support                 |  ✅   |    ✅     | Homebrew / APT                 |
+| `xz`                            | XZ compression                      |  ✅   |    ✅     | Homebrew / APT                 |
+| `zstd`                          | Zstandard compression               |  ✅   |    ✅     | Homebrew / APT                 |
+| `unrar`                         | RAR extraction                      |  ❌   |    ✅     | APT                            |
+| `bzip2`                         | Bzip2 compression                   |  ✅⁴  |    ✅     | built-in / APT                 |
+| **Runtimes & Package Managers** |                                     |       |           |                                |
+| `bun`                           | Fast JS runtime (replaces node/npm) |  ✅   |    ✅     | Official installer             |
+| `uv`                            | Fast Python package manager         |  ✅   |    ✅     | Official installer (astral.sh) |
+| **Shell Plugins & Fonts**       |                                     |       |           |                                |
+| zsh-autosuggestions             | Shell autocompletion plugin         |  ✅   |    ✅     | Homebrew / APT                 |
+| zsh-syntax-highlighting         | Shell syntax coloring plugin        |  ✅   |    ✅     | Homebrew / APT                 |
+| Oh My Zsh                       | Zsh framework                       |  ✅   |    ✅     | Official installer             |
+| FiraCode Nerd Font              | Terminal font with icons            |  ✅   |    ✅     | Homebrew cask / download       |
+| **Linux/WSL Only**              |                                     |       |           |                                |
+| `build-essential`               | Core dev tools (gcc, make)          |  ❌   |    ✅     | APT                            |
+| `zsh`                           | Z Shell                             |  ✅⁴  |    ✅     | built-in / APT                 |
+| `xclip`                         | Clipboard support                   |  ❌   |    ✅     | APT                            |
+| `fontconfig`                    | Font management                     |  ❌   |    ✅     | APT                            |
+| `bc`                            | Calculator                          |  ✅   |    ✅     | Homebrew / APT                 |
+| `lsof`                          | Port/process scanner                |  ✅⁴  |    ✅     | built-in / APT                 |
+| `cmatrix`                       | Terminal matrix animation           |  ✅   |    ✅     | Homebrew / APT                 |
+| `telnet`                        | Telnet client (starwars easter egg) |  ✅   |    ✅     | Homebrew / APT                 |
+| `curl` / `wget`                 | HTTP utilities                      |  ✅⁴  |    ✅     | built-in / APT                 |
+| Linuxbrew                       | Homebrew for Linux                  |  ❌   |    ✅     | Official installer             |
+
+> ¹ Installed as `batcat` on Debian/Ubuntu; symlinked to `bat` automatically  
+> ² Installed as `fdfind` on Debian/Ubuntu; symlinked to `fd` automatically  
+> ³ Linux uses `trash-put` from trash-cli (APT)  
+> ⁴ Pre-installed or bundled with the OS
 
 ---
 
-## 📖 Terminal Inventory
+## 📖 Command Reference
 
-Type `help` in your terminal to see this list live or `dotdoctor` to check system health.
+Type `help` in your terminal to see this list live, or `dotdoctor` to check system health.
 
 ### 📂 Files & Navigation
 
-- `cd` : Smarter directory jumping (powered by **Zoxide**)
-- `up <num>` : Go up N directory levels (**e.g. up 3**)
-- `..` / `~` / `-` : Rapid movement: Up, Home, or Previous directory
-- `ls` / `ll` / `lt` : Modern `ls` with icons/colors (**Eza**) — `ll`=long, `lt`=tree
-- `cat` : Modern `cat` with syntax highlighting (**Bat**)
-- `y` : Terminal visual file explorer (**Yazi**)
-- `fd` : Simple and fast alternative to `find`
-- `cw` : Instantly switch editor window to current folder (Cursor/Code/Antigravity)
-- `backup <file>` : Create a dated copy: `filename.YYYYMMDD_HHMMSS.bak`
-- `note <msg>` : Jot down a quick note to `~/.notes.txt` with timestamp
-- `symlink <link> <target>` : Cross-platform symlink creator (handles Windows Junctions)
-- `extract <file>` : Instant extraction for `.zip`, `.tar.gz`, `.rar`, `.7z`, etc.
-- `compress <name> <files...>` : Smart compression (defaults to `.tar.gz` if no extension)
+| Command                   | Description                                              | WSL | Linux | macOS |
+| ------------------------- | -------------------------------------------------------- | :-: | :---: | :---: |
+| `cd`                      | Smart directory jumping (Zoxide)                         | ✅  |  ✅   |  ✅   |
+| `up <N>`                  | Go up N directory levels                                 | ✅  |  ✅   |  ✅   |
+| `..` / `~` / `-`          | Up one, Home, Previous directory                         | ✅  |  ✅   |  ✅   |
+| `ls` / `ll` / `lt`        | Modern ls with icons (Eza)                               | ✅  |  ✅   |  ✅   |
+| `lsh` / `llh` / `lth`     | Same as above, includes hidden files                     | ✅  |  ✅   |  ✅   |
+| `cat`                     | Syntax-highlighted file viewer (Bat)                     | ✅  |  ✅   |  ✅   |
+| `ccat`                    | Full Bat with line numbers and paging                    | ✅  |  ✅   |  ✅   |
+| `y`                       | Terminal file explorer (Yazi)                            | ✅  |  ✅   |  ✅   |
+| `fd`                      | Fast find alternative                                    | ✅  |  ✅   |  ✅   |
+| `cw`                      | Switch editor window to current folder                   | ✅  |  ✅   |  ✅   |
+| `backup <file>`           | Timestamped copy: `file.20260419_120000.bak`             | ✅  |  ✅   |  ✅   |
+| `note <msg>`              | Quick note with timestamp (`note-config` to set path)    | ✅  |  ✅   |  ✅   |
+| `note-config`             | Set persistent notes save path (stored in ~/.custom.zsh) | ✅  |  ✅   |  ✅   |
+| `symlink <link> <target>` | Create a symlink                                         | ✅  |  ✅   |  ✅   |
+| `extract <file> [dest]`   | Extract any archive format                               | ✅  |  ✅   |  ✅   |
+| `compress <name> <files>` | Create archive (defaults to .tar.gz)                     | ✅  |  ✅   |  ✅   |
 
 ### 🔍 Search & Fuzzy Workflows (FZF)
 
-- `f` / `ff` : Fuzzy file search (CWD / HOME) -> inject path at cursor position
-- `h` / `hh` : Fuzzy history search -> `h` injects to prompt / `hh` copies to clipboard
-- `rt` / `rtt` : Interactive Trash restore (interactive FZF selector)
+| Command              | Description                                      | WSL | Linux | macOS |
+| -------------------- | ------------------------------------------------ | :-: | :---: | :---: |
+| `f` / `Alt+F`        | Fuzzy file search (CWD) → inject path at cursor  | ✅  |  ✅   |  ✅   |
+| `ff` / `Alt+Shift+F` | Fuzzy file search (HOME) → inject path at cursor | ✅  |  ✅   |  ✅   |
+| `h` / `Ctrl+H`       | Fuzzy history search → inject command at prompt  | ✅  |  ✅   |  ✅   |
+| `hh`                 | Fuzzy history search → copy to clipboard         | ✅  |  ✅   |  ✅   |
+| `rt` / `rtt`         | Interactive trash restore (FZF selector)         | ✅  |  ✅   |  ❌   |
 
 ### 🐙 Git & GitHub
 
-- `lg` : Open **Lazygit** TUI (Visual Git)
-- `gs` : Short branch status (`git status -sb`)
-- `gds` : Diff staged changes (`git diff --staged`)
-- `gb` / `gba` : List local branches / List all branches (including remote)
-- `ga` : Stage all changes (`git add --all`)
-- `gl` : High-contrast, beautiful graph log
-- `gu` : Undo last commit (keeps changes staged)
-- `gam` : Amend current commit quietly
-- `gr` : **Git Redo** (Fuzzy Time Machine) — reset to any point in reflog
-- `gstats` : Comprehensive GitHub Dashboard (Notifications, Mentions, Reviews)
-- `ghn`, `ghm`, `ghr` : Direct access to your GitHub pings and reviews
-- `pr` / `prs` : GitHub CLI wrappers for browser-based PR creation and listing
-- `ghv` / `ghme` : Open repo on GitHub / List my active Pull Requests
+| Command               | Description                                  | WSL | Linux | macOS |
+| --------------------- | -------------------------------------------- | :-: | :---: | :---: |
+| `lg`                  | Open Lazygit TUI                             | ✅  |  ✅   |  ✅   |
+| `gs`                  | `git status -sb` (short branch status)       | ✅  |  ✅   |  ✅   |
+| `gd` / `gds`          | Git diff / diff staged                       | ✅  |  ✅   |  ✅   |
+| `gdss`                | Diff staged (side-by-side via delta)         | ✅  |  ✅   |  ✅   |
+| `gb` / `gba`          | List branches / all branches                 | ✅  |  ✅   |  ✅   |
+| `ga`                  | `git add --all`                              | ✅  |  ✅   |  ✅   |
+| `gl`                  | Beautiful graph log (last 15 commits)        | ✅  |  ✅   |  ✅   |
+| `gu`                  | Undo last commit (keeps changes staged)      | ✅  |  ✅   |  ✅   |
+| `gam`                 | Amend last commit (with confirmation)        | ✅  |  ✅   |  ✅   |
+| `gpf`                 | Force push with lease (with RED warning)     | ✅  |  ✅   |  ✅   |
+| `gr`                  | Git Redo — fuzzy time machine via reflog     | ✅  |  ✅   |  ✅   |
+| `pr` / `prs`          | Create PR (web) / List open PRs              | ✅  |  ✅   |  ✅   |
+| `ghv` / `ghme`        | View repo on GitHub / List my PRs            | ✅  |  ✅   |  ✅   |
+| `gstats`              | GitHub dashboard (notifs, mentions, reviews) | ✅  |  ✅   |  ✅   |
+| `ghn` / `ghm` / `ghr` | Notifications / Mentions / Review requests   | ✅  |  ✅   |  ✅   |
+| `help git`            | Git prompt symbol cheat sheet                | ✅  |  ✅   |  ✅   |
 
 ### 🌐 Network & System
 
-- `myip` : Show public IPv4 and IPv6 addresses
-- `localip` : Show current local LAN IP (OS-aware)
-- `port <num>` : See what process is listening on a specific port
-- `kill-port <num>` : Force kill any process occupying a port
-- `memhog` : Show top 15 memory-consuming processes
-- `df` / `free` : Human-readable Disk and Memory usage
-- `weather` : Beautiful 3-day ASCII weather forecast in your terminal
-- `top` : Interactive system monitor (prefers `btm` if installed)
-- `http` : Modern API testing and cURL replacement (**XH**)
-- `copy` / `cpwd` : Clipboard utilities (`copy` reads stdin, `cpwd` copies current path)
-- `path` : Pretty-print your `$PATH` one entry per line
-- `please` : Re-run previous command with `sudo` (Linux/macOS only)
-- `reload` / `x` : Reload shell config / Instant terminal exit
-- `daemonize <cmd>` : Run a command in background and save logs
+| Command           | Description                                 | WSL | Linux | macOS |
+| ----------------- | ------------------------------------------- | :-: | :---: | :---: |
+| `myip`            | Show public IPv4 and IPv6                   | ✅  |  ✅   |  ✅   |
+| `localip`         | Show local LAN IP                           | ✅  |  ✅   |  ✅   |
+| `port [num]`      | List listeners or check specific port       | ✅  |  ✅   |  ✅   |
+| `kill-port <num>` | Kill process on a port                      | ✅  |  ✅   |  ✅   |
+| `memhog`          | Top 15 memory-consuming processes           | ✅  |  ✅   |  ✅   |
+| `top`             | Interactive monitor (btm preferred)         | ✅  |  ✅   |  ✅   |
+| `http`            | HTTP client (xh)                            | ✅  |  ✅   |  ✅   |
+| `copy` / `cpwd`   | Copy stdin / copy current path to clipboard | ✅¹ |  ✅²  |  ✅³  |
+| `df` / `free`     | Disk / Memory usage (human-readable)        | ✅  |  ✅   |  ✅   |
+| `weather`         | 3-day ASCII weather forecast                | ✅  |  ✅   |  ✅   |
+| `path`            | Pretty-print $PATH one entry per line       | ✅  |  ✅   |  ✅   |
+| `please`          | Re-run last command with sudo               | ✅  |  ✅   |  ✅   |
+| `reload` / `x`    | Reload shell / Exit terminal                | ✅  |  ✅   |  ✅   |
+| `daemonize <cmd>` | Run in background with log file             | ✅  |  ✅   |  ✅   |
+| `sleep <sec>`     | Cross-platform sleep                        | ✅  |  ✅   |  ✅   |
 
-#### 🎮 Fun & Aesthetics
+> ¹ Uses `clip.exe`  
+> ² Uses `xclip`, `wl-copy`, or `xsel`  
+> ³ Uses `pbcopy`
 
-- `matrix` : Falling green code (requires `cmatrix` installed)
-- `starwars` : Watch Star Wars IV in ASCII (telnet)
+### 🗑️ Safe Deletion & Trash
 
-### 🛠️ Environment & Dev-Ops
+| Command       | Description                     | WSL | Linux | macOS |
+| ------------- | ------------------------------- | :-: | :---: | :---: |
+| `rm` / `del`  | Move to trash (never permanent) | ✅  |  ✅   |  ✅   |
+| `trash-list`  | List trash contents             | ✅  |  ✅   |  ❌   |
+| `empty-trash` | Empty trash                     | ✅  |  ✅   |  ❌   |
+| `rl`          | Alias for `trash-list`          | ✅  |  ✅   |  ❌   |
+| `rt` / `rtt`  | FZF-powered trash restore       | ✅  |  ✅   |  ❌   |
 
-- `dotdoctor` : Check if all core tools are installed and caches are healthy
-- `envup <file>` : Load `.env` variables into your current shell session
-- `pyclean` : Recursively delete Python bytecode and cache folders
-- `setup-terminal` : Re-run installer to repair or update the environment
-- `refresh` : Rebuild the tool cache and reload the shell configuration
-- `hclear` : Securely wipe all terminal history with confirmation
-- `calc <expr>` : Command-line calculator (**e.g. calc "250 \* 1.5"**)
-- `server <port>` : Instant Python web server (default :8000)
-- `json` : Pretty-print minified JSON from stdin or file
-- `c` : Shortcut for `clear`
+### 🐍 Development & Data
+
+| Command         | Description                               | WSL | Linux | macOS |
+| --------------- | ----------------------------------------- | :-: | :---: | :---: |
+| `json`          | Pretty-print JSON (jq or Python fallback) | ✅  |  ✅   |  ✅   |
+| `calc <expr>`   | Calculator (bc or awk fallback)           | ✅  |  ✅   |  ✅   |
+| `server [port]` | Python HTTP server (via UV)               | ✅  |  ✅   |  ✅   |
+| `envup [file]`  | Load .env variables into session          | ✅  |  ✅   |  ✅   |
+| `pyclean`       | Remove all Python cache/bytecode          | ✅  |  ✅   |  ✅   |
+| `jq`            | JSON processor                            | ✅  |  ✅   |  ✅   |
+| `yq`            | YAML processor                            | ✅  |  ✅   |  ✅   |
 
 ### 🤖 AI Guard Aliases
 
-Global aliases that warn you when using legacy tools and suggest modern, faster AI-optimized alternatives:
+These aliases warn when using legacy tools and suggest modern alternatives:
 
-- `node`, `npm`, `npx` -> Suggests **Bun**
-- `yarn`, `pnpm` -> Suggests **Bun**
-- `nodemon`, `ts-node`, `tsx` -> Suggests **Bun**
-- `python`, `pip`, `venv` -> Suggests **UV**
-- `poetry` -> Suggests **UV**
+| Blocked Command                    | Suggested Alternative     | Condition      |
+| ---------------------------------- | ------------------------- | -------------- |
+| `node`, `npm`, `npx`               | `bun run`, `bun`, `bun x` | `HAS_BUN=true` |
+| `yarn`, `pnpm`                     | `bun`                     | `HAS_BUN=true` |
+| `nodemon`, `ts-node`, `tsx`        | `bun --watch`, `bun`      | `HAS_BUN=true` |
+| `python`, `python3`, `pip`, `pip3` | `uv run`, `uv`            | `HAS_UV=true`  |
+| `venv`, `poetry`                   | `uv venv`, `uv`           | `HAS_UV=true`  |
+
+### 🛡️ Setup & Maintenance
+
+| Command               | Description                              | WSL | Linux | macOS |
+| --------------------- | ---------------------------------------- | :-: | :---: | :---: |
+| `setup-terminal`      | Re-run installer (fix/update tools)      | ✅  |  ✅   |  ✅   |
+| `dotdoctor`           | Health check (verify all tools + caches) | ✅  |  ✅   |  ✅   |
+| `editor-config`       | Print recommended VS Code/Kiro settings  | ✅  |  ✅   |  ✅   |
+| `refresh`             | Rebuild tool cache + reload shell        | ✅  |  ✅   |  ✅   |
+| `hclear`              | Securely wipe terminal history           | ✅  |  ✅   |  ✅   |
+| `git-setup`           | Interactive git user.name/email config   | ✅  |  ✅   |  ✅   |
+| `ssh-setup`           | Generate ed25519 key + add to agent      | ✅  |  ✅   |  ✅   |
+| `ssh-login`           | Start ssh-agent + load key               | ✅  |  ✅   |  ✅   |
+| `ssh-test`            | Test SSH connection to GitHub            | ✅  |  ✅   |  ✅   |
+| `dotfiles-share-root` | Share dotfiles with root user            | ✅  |  ✅   |  ✅   |
+
+### 🎮 Fun & Aesthetics
+
+| Command    | Description                             | WSL | Linux | macOS |
+| ---------- | --------------------------------------- | :-: | :---: | :---: |
+| `matrix`   | Falling green code (requires `cmatrix`) | ✅  |  ✅   |  ✅   |
+| `starwars` | Star Wars IV in ASCII (telnet)          | ✅  |  ✅   |  ✅   |
 
 ---
 
-## ☁️ Cloud & Infrastructure
+## 📁 Architecture
 
-Enhanced support for AWS and Terraform development:
+```
+~/.dotfiles/
+├── init.sh                  # Master loader (sourced from .bashrc/.zshrc)
+├── install.sh               # Cross-platform installer (macOS/Linux/WSL)
+├── starship.toml            # Starship prompt configuration
+├── custom.example.sh        # Template for personal overrides
+│
+├── core/
+│   ├── path-utils.sh        # _path_add, _path_clean helpers
+│   ├── os-detect.sh         # IS_MAC, IS_LINUX, IS_WSL detection
+│   ├── paths.sh             # PATH construction (platform-aware)
+│   └── history.sh           # Shell history config + hclear
+│
+├── plugins/
+│   ├── tool-cache.sh        # HAS_* flag detection (cached)
+│   ├── zoxide.sh            # Zoxide (smart cd) initialization
+│   └── shell.sh             # Oh My Zsh, Starship, Zsh plugins
+│
+├── modules/
+│   ├── archives.sh          # extract, compress
+│   ├── dev.sh               # AI guards, pyclean, envup, json, calc, server
+│   ├── doctor.sh            # dotdoctor health check
+│   ├── dotfiles.sh          # setup-terminal, note, share-root
+│   ├── editor-config.sh     # editor-config (VS Code/Kiro settings)
+│   ├── fzf.sh              # f, ff, h, hh (fuzzy workflows)
+│   ├── git.sh              # Git aliases + gr, gu, gam, gpf, gstats
+│   ├── help.sh             # help, myhelp, help_git
+│   ├── navigation.sh       # ls/ll/lt, cat, backup, cw, symlink, up
+│   ├── network.sh          # myip, localip, port, kill-port
+│   ├── setup-wizard.sh     # git-setup, ssh-setup, ssh-login, ssh-test
+│   └── system.sh           # rm/del, copy, memhog, top, sleep, daemonize, etc.
+│
+├── platform/
+│   ├── macos.sh            # Homebrew path, BSD ls colors
+│   └── linux.sh            # GPG_TTY, GNU ls colors
+│
+└── test/
+    ├── suite.sh            # Interactive mode test suite
+    └── mock_tools.sh       # Mock binaries for testing
+```
 
-- **Intelligent AWS Prompt**:
-  -  **Profile name** and **Account ID** visibility.
-  - **Region Flags** (e.g. 🇮🇪 for Ireland, 🇺🇸 for US).
-  - **Session Duration**: Live countdown timer for temporary/SSO credentials.
-- `aws who` : Dynamic identity summary (Account, Role, Profile, Region).
-- `aws login` : Alias for modern AWS login sessions.
-- `tf` : Shortcut for **Terraform**.
-- `aws s3 ls` : Quickly list your cloud storage buckets.
+### Loading Order
+
+1. **Core** — `path-utils.sh` → `os-detect.sh` → `paths.sh` → `history.sh`
+2. **Plugins** — `tool-cache.sh` → `shell.sh` → `zoxide.sh`
+3. **Modules** — All `modules/*.sh` files (alphabetical)
+4. **Platform** — `macos.sh` / `linux.sh` (based on OS detection)
+
+---
+
+## ⚡ Performance Profiling
+
+To measure startup time of each module:
+
+```bash
+PROFILE_DOTFILES=true source ~/.dotfiles/init.sh
+```
+
+This prints a breakdown of how long each file takes to load, helping identify bottlenecks.
+
+---

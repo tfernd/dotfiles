@@ -3,20 +3,7 @@
 # FILE & WORKSPACE MANAGEMENT FUNCTIONS
 # ============================================================================
 
-# --- Editor Re-attachment ---
-# Switches the current editor window to focus on the current directory.
-unalias cw 2>/dev/null || true
-function cw() {
-    local node=$(echo "$VSCODE_GIT_ASKPASS_NODE" | tr '[:upper:]' '[:lower:]')
-    case "$node" in
-        *code*)        code -r . ;;
-        *cursor*)      cursor -r . ;;
-        *antigravity*) antigravity -r . ;;
-        *) echo "❌ Not inside a supported editor terminal." ;;
-    esac
-}
-
-# --- Point-in-time Backup ---
+# --- Point-in-time Backup (available in ALL modes including AI) ---
 # Creates a timestamped duplicate of a file or directory for safe editing.
 unalias backup 2>/dev/null || true
 function backup() {
@@ -29,8 +16,22 @@ function backup() {
     echo "✅ Backed up $1 -> $dest"
 }
 
+# --- Editor Re-attachment ---
+# Switches the current editor window to focus on the current directory.
+unalias cw 2>/dev/null || true
+function cw() {
+    local node=$(echo "$VSCODE_GIT_ASKPASS_NODE" | tr '[:upper:]' '[:lower:]')
+    case "$node" in
+        *kiro*)        kiro -r . ;;
+        *code*)        code -r . ;;
+        *cursor*)      cursor -r . ;;
+        *antigravity*) antigravity -r . ;;
+        *) echo "❌ Not inside a supported editor terminal." ;;
+    esac
+}
+
 # --- Cross-Platform Symlinking ---
-# Creates directory links compatible with both Unix and Windows (Junctions).
+# Creates symbolic links.
 unalias symlink 2>/dev/null || true
 function symlink() {
     if [ $# -ne 2 ]; then
@@ -39,11 +40,7 @@ function symlink() {
     fi
     
     local link="$1" target="$2"
-    if [ "$IS_WIN" = "true" ]; then
-        cmd.exe /c mklink /J "$(cygpath -w "$link")" "$(cygpath -w "$target")"
-    else
-        ln -s "$target" "$link"
-    fi
+    ln -s "$target" "$link"
 }
 
 # --- Navigation & File Reading Aliases ---

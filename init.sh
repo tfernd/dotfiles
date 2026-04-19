@@ -57,31 +57,34 @@ function source_timed() {
 
 [ "$PROFILE_DOTFILES" = "true" ] && echo -e "\n\033[1;35m🚀 Profiling Dotfiles Startup...\033[0m"
 
-# 1. Load Core Environment (Architecture)
-export AWS_PROFILE=tferds
-
-for module in path-utils.sh os-detect.sh history.sh paths.sh; do
+# 1. Load Core Environment (Architecture) — ALWAYS
+for module in path-utils.sh os-detect.sh paths.sh; do
     [ -f "$DOTFILES_DIR/core/$module" ] && source_timed "$DOTFILES_DIR/core/$module"
 done
 
-# 2. Load Tool Cache & Core Plugins (Integrations)
-for module in tool-cache.sh zoxide.sh shell.sh; do
+[ -f "$DOTFILES_DIR/core/history.sh" ] && source_timed "$DOTFILES_DIR/core/history.sh"
+
+# 2. Tool Cache — ALWAYS (needed for HAS_* flags)
+[ -f "$DOTFILES_DIR/plugins/tool-cache.sh" ] && source_timed "$DOTFILES_DIR/plugins/tool-cache.sh"
+
+# Shell UI first (Starship prompt), then Zoxide last (must be after prompt init)
+for module in shell.sh zoxide.sh; do
     [ -f "$DOTFILES_DIR/plugins/$module" ] && source_timed "$DOTFILES_DIR/plugins/$module"
 done
 
-# 3. Load Feature Modules (Functions & Aliases)
+# 3. Load Feature Modules
 if [ -n "$ZSH_VERSION" ]; then setopt local_options NULL_GLOB; else shopt -s nullglob; fi
 
-for file in "$DOTFILES_DIR/modules/"*.sh; do 
+for file in "$DOTFILES_DIR/modules/"*.sh; do
     source_timed "$file"
 done
 
 [ -z "$ZSH_VERSION" ] && shopt -u nullglob
 
-# 4. Load OS-Specific Quirks (Overrides)
+# 4. Platform overrides
 [ "$IS_MAC" = "true" ] && [ -f "$DOTFILES_DIR/platform/macos.sh" ] && source_timed "$DOTFILES_DIR/platform/macos.sh"
 [ "$IS_LINUX" = "true" ] && [ -f "$DOTFILES_DIR/platform/linux.sh" ] && source_timed "$DOTFILES_DIR/platform/linux.sh"
-[ "$IS_WIN" = "true" ] && [ -f "$DOTFILES_DIR/platform/windows.sh" ] && source_timed "$DOTFILES_DIR/platform/windows.sh"
+
 
 if [ "$PROFILE_DOTFILES" = "true" ]; then
     _DOT_END_TIME=0
@@ -103,3 +106,5 @@ unset -f _path_add _path_clean source_timed 2>/dev/null
 
 # Clean up temporary environment variables used during initialization
 unset _DOT_START_TIME _DOT_END_TIME _TOTAL_MS 2>/dev/null
+unset BASHRC_SRC BASHRC_HASH TOOL_CACHE_KEY 2>/dev/null
+unset ZOXIDE_SRC ZOXIDE_HASH ZOXIDE_CACHE 2>/dev/null

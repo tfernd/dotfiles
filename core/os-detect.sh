@@ -4,7 +4,6 @@
 # ============================================================================
 
 # --- OS & Shell Intelligence ---
-# Enables cross-platform behavior by detecting the environment at startup.
 if [ -n "$ZSH_VERSION" ]; then
     export CURRENT_SHELL="zsh"
 elif [ -n "$BASH_VERSION" ]; then
@@ -15,9 +14,13 @@ fi
 
 export IS_MAC=false
 export IS_LINUX=false
-export IS_WIN=false
 case "$OSTYPE" in
-    darwin*)         IS_MAC=true   ;;
-    linux*)          IS_LINUX=true ;;
-    msys* | cygwin*) IS_WIN=true   ;;
+    darwin*) IS_MAC=true  ;;
+    linux*)  IS_LINUX=true ;;
 esac
+
+# --- WSL Detection ---
+export IS_WSL=false
+if [ "$IS_LINUX" = "true" ] && grep -qi microsoft /proc/version 2>/dev/null; then
+    IS_WSL=true
+fi

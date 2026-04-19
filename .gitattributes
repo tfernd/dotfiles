@@ -1,0 +1,5 @@
+# Force LF line endings for shell scripts (prevents \r\n issues on WSL/Linux)
+*.sh text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+

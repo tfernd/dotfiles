@@ -5,7 +5,6 @@
 # f / ff   : Search files/folders in CWD/HOME -> insert at cursor
 # h / hh   : Search history -> insert at cursor / copy to clipboard
 # ============================================================================
-
 if [ "$HAS_FZF" != "true" ]; then return 0; fi
 
 # ============================================================================
@@ -176,3 +175,4 @@ function hh() {
     echo -n "$cmd" | copy 2>/dev/null || true
     echo "✅ Copied to clipboard: $cmd"
 }
+

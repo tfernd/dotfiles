@@ -11,9 +11,6 @@ function memhog() {
         ps -m -o user,pid,%cpu,%mem,vsz,rss,stat,comm | head -n 15
     elif [ "$IS_LINUX" = "true" ]; then
         ps axo user,pid,%cpu,%mem,vsz,rss,stat,comm --sort=-%mem | head -n 15
-    else
-        # Windows/Git Bash fallback
-        ps | head -n 15
     fi
 }
 
@@ -21,7 +18,7 @@ function memhog() {
 # Launches the best available monitoring tool (btm, top) for real-time analysis.
 unalias top 2>/dev/null || true
 function top() {
-    if command -v btm >/dev/null 2>&1; then
+    if [ "$HAS_BTM" = "true" ]; then
         command btm "$@"
     elif command -v top >/dev/null 2>&1; then
         command top "$@"
@@ -40,45 +37,12 @@ function sleep() {
         command sleep "$seconds"
     elif command -v uv >/dev/null 2>&1; then
         uv run --no-project python -c "import time; time.sleep(float('$seconds'))"
-    elif [ "$IS_WIN" = "true" ]; then
-        ping -n $((${seconds%.*} + 1)) 127.0.0.1 > /dev/null
     fi
 }
 
-
-# --- System Utility Aliases ---
-
-# --- Clipboard Handling ---
-if [ "$IS_MAC" = "true" ]; then
-    alias copy='pbcopy'
-elif [ "$IS_WIN" = "true" ]; then
-    alias copy='clip.exe'
-elif [ "$IS_LINUX" = "true" ]; then
-    if command -v xclip >/dev/null 2>&1; then
-        alias copy='xclip -selection clipboard'
-    elif command -v wl-copy >/dev/null 2>&1; then
-        alias copy='wl-copy'
-    elif command -v xsel >/dev/null 2>&1; then
-        alias copy='xsel --clipboard --input'
-    fi
-fi
-
-alias cpwd='pwd | copy'
-alias c='clear'
-alias path='echo $PATH | tr ":" "\n"'
-
-# --- System & Environment ---
-alias df='df -h'
-alias x='exit'
+# --- System & Environment (interactive-only) ---
 alias reload='exec $SHELL -l'
 alias weather='curl wttr.in'
-
-# free — Memory usage (Linux only, falls back to memhog on others)
-if [ "$IS_LINUX" = "true" ]; then
-    alias free='free -m'
-else
-    alias free='memhog'
-fi
 
 # daemonize — Run a command in the background and log output.
 unalias daemonize 2>/dev/null || true
@@ -98,10 +62,45 @@ function daemonize() {
 alias matrix='cmatrix -b'
 alias starwars='telnet towel.blinkenlights.nl'
 
-
 # 'Please' as a sudo shortcut for the last command
-if [ "$IS_WIN" != "true" ]; then
-    alias please='sudo $(fc -ln -1)'
+alias please='sudo $(fc -ln -1)'
+
+
+
+# ============================================================================
+# ALWAYS loaded (including AI terminals) — Safe deletion only
+# ============================================================================
+
+# --- Clipboard Handling ---
+if [ "$IS_MAC" = "true" ]; then
+    alias copy='pbcopy'
+elif [ "$IS_LINUX" = "true" ]; then
+    if [ "$IS_WSL" = "true" ] && command -v clip.exe >/dev/null 2>&1; then
+        alias copy='clip.exe'
+    elif command -v xclip >/dev/null 2>&1; then
+        alias copy='xclip -selection clipboard'
+    elif command -v wl-copy >/dev/null 2>&1; then
+        alias copy='wl-copy'
+    elif command -v xsel >/dev/null 2>&1; then
+        alias copy='xsel --clipboard --input'
+    fi
+fi
+
+alias cpwd='pwd | copy'
+alias c='clear'
+
+# path — Pretty-print $PATH one entry per line
+alias path='echo "$PATH" | tr ":" "\n"'
+
+# --- System & Environment ---
+alias df='df -h'
+alias x='exit'
+
+# free — Memory usage (Linux only, falls back to memhog on others)
+if [ "$IS_LINUX" = "true" ]; then
+    alias free='free -m'
+else
+    alias free='memhog'
 fi
 
 # --- Safety & Deletion Aliases ---
@@ -148,15 +147,41 @@ if [ "$HAS_TRASH" = "true" ]; then
         
         # --- Interactive Trash Recovery ---
         # Provides a fuzzy-search interface to selectively restore deleted files.
+        # trash-restore is interactive: it prints numbered entries and waits for
+        # a number on stdin. We capture that numbered list, let fzf pick one,
+        # extract the number, and feed it back into trash-restore.
         function _fzf_rt() {
-            local search_dir="$1"
-            local list_cmd="trash-list"
-            [ -n "$search_dir" ] && list_cmd="trash-list | grep \"$search_dir\""
-            
-            local selected=$(eval "$list_cmd" | fzf --height 50% --reverse --header "Select file to restore" --preview "echo {}")
+            local search_dir="${1:-}"
+
+            # Get the numbered list from trash-restore by sending an invalid
+            # input ("") so it prints the list and exits without restoring.
+            local list
+            if [ -n "$search_dir" ]; then
+                list=$(echo "" | trash-restore "$search_dir" 2>/dev/null)
+            else
+                list=$(echo "" | trash-restore 2>/dev/null)
+            fi
+
+            # Strip the trailing "What file to restore [0..N]:" prompt line
+            local entries
+            entries=$(echo "$list" | sed '/^[[:space:]]*$/d' | head -n -1)
+
+            if [ -z "$entries" ]; then
+                echo "🗑️  Trash is empty (nothing to restore)." >&2
+                return 0
+            fi
+
+            local selected
+            selected=$(echo "$entries" | fzf --height 50% --reverse --header "Select file to restore" --preview "echo {}")
             if [ -n "$selected" ]; then
-                local path=$(echo "$selected" | cut -d' ' -f3-)
-                trash-restore "$path"
+                # Extract the leading number from the selected line (e.g. "   3 2026-04-19 ...")
+                local idx
+                idx=$(echo "$selected" | sed 's/^[[:space:]]*//' | cut -d' ' -f1)
+                if [ -n "$search_dir" ]; then
+                    echo "$idx" | trash-restore "$search_dir"
+                else
+                    echo "$idx" | trash-restore
+                fi
             fi
         }
         alias rt='_fzf_rt "$PWD"'   # Current directory only

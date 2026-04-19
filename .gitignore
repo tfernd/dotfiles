@@ -1,0 +1,25 @@
+# Logs
+*.log
+
+# Backup files created by the installer
+*.bak
+
+# Test artifacts
+test_arc
+nul
+
+# Personal files
+todo.txt
+notes.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Caches
+*.cache
+
+test_arc
+nul
+custom.example.sh

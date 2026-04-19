@@ -2,7 +2,6 @@
 # ============================================================================
 # LINUX SPECIFIC OVERRIDES & TWEAKS
 # ============================================================================
-
 # Ensure GPG TTY is set for commit signing
 export GPG_TTY=$(tty)
 

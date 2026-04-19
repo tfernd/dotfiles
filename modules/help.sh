@@ -2,7 +2,6 @@
 # ============================================================================
 # HELP MENU & CHEAT SHEETS
 # ============================================================================
-
 function myhelp() {
     echo -e "\n\033[1;36m=================================================================\033[0m"
     echo -e "\033[1;35m  🚀 THE CROSS-PLATFORM TERMINAL CHEATSHEET\033[0m"
@@ -15,7 +14,7 @@ function myhelp() {
     [ "$HAS_ZOXIDE" = "true" ] && print_cmd "cd" "Smarter cd (zoxide)"
     print_cmd "up, .., ~" "Go up N levels, up 1 level, or Home"
     print_cmd "-" "Jump to the last directory you were in"
-    print_cmd "cw" "Switch editor workspace to current folder (Antigravity/Cursor/Code)"
+    print_cmd "cw" "Switch editor workspace to current folder (Kiro/Cursor/Code/Antigravity)"
     if [ "$HAS_EZA" = "true" ]; then
         print_cmd "ls, ll" "Modern ls with icons (ll = long format, lt = tree)"
         print_cmd "lsh, llh" "Same as above but shows hidden files"
@@ -24,14 +23,11 @@ function myhelp() {
     fi
     [ "$HAS_BAT" = "true" ] && print_cmd "cat" "Modern cat with syntax highlighting (bat)"
     print_cmd "extract"   "Unzip ANY archive format instantly"
-    if [ "$IS_WIN" = "true" ]; then
-        print_cmd "symlink" "Create a junction (Windows) — symlink <link> <target>"
-    else
-        print_cmd "symlink" "Create a symlink — symlink <link> <target>"
-    fi
+    print_cmd "symlink" "Create a symlink — symlink <link> <target>"
     print_cmd "compress"  "Zip files instantly (e.g. compress archive docs/)"
     print_cmd "backup"    "Backup a file (e.g. backup file.txt -> file.txt_date.bak)"
-    print_cmd "note"      "Jot down a quick note with timestamp"
+    print_cmd "note"      "Quick note with timestamp (note-config to set save path)"
+    print_cmd "note-config" "Set where notes are saved (persists in ~/.custom.zsh)"
 
     echo -e "\n\033[1;33m🔍 SEARCH & SYSTEM\033[0m"
     print_cmd "memhog"   "Show top 15 memory-hogging processes"
@@ -44,12 +40,10 @@ function myhelp() {
         print_cmd "Alt+F / f"        "Fuzzy file search from CWD -> inject path at cursor"
         print_cmd "Alt+Shift+F / ff"  "Fuzzy file search from HOME -> inject path at cursor"
         print_cmd "Ctrl+H / h"        "Fuzzy history search -> inject command at cursor"
-        print_cmd "v"                 "Fuzzy file search -> open in VS Code"
         print_cmd "hh"                "Fuzzy history search -> copy to clipboard"
     fi
     print_cmd "port, kill-port" "Check what app is on a port, and Kill it"
     print_cmd "copy, cpwd, ccat" "Clipboard: copy stdin, copy pwd, copy file"
-    print_cmd "path"        "Print PATH variable neatly"
     print_cmd "c"           "Clear the terminal screen"
     print_cmd "myip, localip" "Get public and local IP address"
     print_cmd "df, free"    "Disk and Memory usage (human readable)"
@@ -61,9 +55,10 @@ function myhelp() {
     echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
     [ "$HAS_LAZYGIT" = "true" ] && print_cmd "lg"  "Open Lazygit TUI (Visual Git)"
     print_cmd "gs, gds" "Git status (short), Git diff staged"
+    print_cmd "gdss"   "Git diff staged (side-by-side view)"
     print_cmd "gb, gba" "List branches, List all branches (inc. remote)"
     print_cmd "gl, ga" "Git log (beautiful graph), Git add all"
-    print_cmd "gu, gr" "Git Undo (reset HEAD~1), Git Redo (time machine)"
+    print_cmd "gu, gr" "Git Undo / Redo (with confirmation prompt)"
     print_cmd "gam"    "Git Amend (add to last commit quietly)"
     print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
     if [ "$HAS_GH" = "true" ]; then
@@ -73,15 +68,6 @@ function myhelp() {
         print_cmd "ghv, ghme" "View repo on GitHub, List my PRs"
     fi
     print_cmd "help git" "Decode your git prompt symbols (cheat sheet)"
-
-    echo -e "\n\033[1;33m☁️  AWS & CLOUD\033[0m"
-    if [ "$HAS_AWS" = "true" ]; then
-        print_cmd "aws login"   "Login via modern CLI session"
-        print_cmd "aws who"     "Check current AWS identity (Account, Role, Profile)"
-        print_cmd "awswho"      "Instantly verify 'awsmyid' profile credentials"
-        print_cmd "aws s3 ls"   "List your S3 buckets"
-    fi
-    [ "$HAS_TERRAFORM" = "true" ] && print_cmd "tf" "Terraform (infrastructure as code)"
 
     echo -e "\n\033[1;33m🐍 DEVELOPMENT & DATA\033[0m"
     [ "$HAS_JQ" = "true" ] && print_cmd "jq"      "Command-line JSON processor"
@@ -95,9 +81,14 @@ function myhelp() {
 
     echo -e "\n\033[1;33m🛡️ SETUP & SAFETY\033[0m"
     print_cmd "setup-terminal" "Install all missing tools"
+    print_cmd "editor-config" "Print recommended VS Code / Kiro settings for your OS"
+    print_cmd "git-setup"  "Interactive: set git user.name + email globally"
+    print_cmd "ssh-setup"  "Interactive: generate SSH key, add to agent, test"
+    print_cmd "ssh-login"  "Quick: start ssh-agent + add your key"
+    print_cmd "ssh-test"   "Test SSH connection to GitHub"
     print_cmd "dotfiles-share-root" "Setup same environment for the ROOT user"
     print_cmd "refresh"        "Rebuild tool cache + reload shell"
-    [ "$IS_WIN" != "true" ] && print_cmd "please" "Re-run previous command with sudo"
+    print_cmd "please" "Re-run previous command with sudo"
     if [ "$HAS_TRASH" = "true" ]; then
         print_cmd "rm, del" "Move to Trash (Safe versions of deletion)"
     fi

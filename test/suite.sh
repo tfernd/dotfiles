@@ -16,16 +16,20 @@ echo -e "🚀 Starting Dotfiles Test Suite..."
 [ -n "$BASH_VERSION" ] && shopt -s expand_aliases 2>/dev/null || true
 export HOME="/tmp/dotfiles_test_home"
 mkdir -p "$HOME/.cache"
+# Load mocks BEFORE init.sh so the tool cache detects mock binaries
+source "$SCRIPT_DIR/mock_tools.sh"
+export PATH="/tmp/dotfiles_mock_bin:$PATH"
+# Force tool cache rebuild with mocks in PATH
+rm -f "$HOME/.cache/bashrc_tools"
+
 # 2. Source the Loader
 echo "📥 Sourcing init.sh..."
 source "$DOT_DIR/init.sh"
 
-# 3. Environment Simulation (Mocks must take precedence)
+# 3. Ensure mocks still take precedence after init.sh PATH additions
 [ -n "$BASH_VERSION" ] && shopt -s expand_aliases 2>/dev/null || true
 export HOME="/tmp/dotfiles_test_home"
 mkdir -p "$HOME/.cache"
-source "$SCRIPT_DIR/mock_tools.sh"
-# Force mock path to the very front in case init.sh added things
 export PATH="/tmp/dotfiles_mock_bin:$PATH"
 
 # 3. Validation Tests
@@ -63,7 +67,7 @@ function assert_var() {
 echo -e "\n🔍 Checking OS & Shell..."
 assert_var IS_MAC
 assert_var IS_LINUX
-assert_var IS_WIN
+assert_var IS_WSL
 assert_var CURRENT_SHELL
 
 echo -e "\n🔍 Checking Feature Flags..."
@@ -113,6 +117,7 @@ assert_defined gr
 assert_defined gb
 assert_defined gba
 assert_defined gds
+assert_defined gdss
 assert_defined prs
 assert_defined gstats
 assert_defined ghn
@@ -140,13 +145,8 @@ assert_defined daemonize
 assert_defined matrix
 assert_defined starwars
 assert_defined path
-# 'please' only on non-windows
-if [ "$IS_WIN" != "true" ]; then
-    assert_defined please
-fi
-if [ "$HAS_AWS" = "true" ] || [ -f "/tmp/dotfiles_mock_bin/aws" ]; then
-    assert_defined awswho
-fi
+assert_defined please
+
 
 echo -e "\n🔍 Checking AI Guards..."
 assert_defined node
@@ -184,17 +184,21 @@ echo -e "\n🔍 Checking Meta/Management Functions..."
 assert_defined dotdoctor
 assert_defined envup
 assert_defined pyclean
+assert_defined git-setup
+assert_defined ssh-setup
+assert_defined ssh-login
+assert_defined ssh-test
 assert_defined dotfiles-share-root
 assert_defined setup-terminal
-assert_defined update-dotfiles
 assert_defined refresh
 assert_defined hclear
 assert_defined myhelp
 assert_defined help_git
 assert_defined note
+assert_defined note-config
 assert_defined help
 assert_defined c
-assert_defined awswho
+
 
 echo -e "\n🔍 Checking Underlying Dependencies..."
 function assert_tool() {
@@ -217,6 +221,9 @@ assert_tool xz
 assert_tool zstd
 assert_tool bzip2
 assert_tool gzip
+assert_tool lsof
+assert_tool cmatrix
+assert_tool telnet
 
 echo -e "\n🧪 Functional Tests: backup"
 function assert_file_glob() {
@@ -235,10 +242,24 @@ backup "/tmp/test_backup" >/dev/null 2>&1
 assert_file_glob "/tmp/test_backup.*.bak"
 rm -f /tmp/test_backup
 
-echo -e "\n🧪 Functional Tests: note"
-note "Test Note" >/dev/null 2>&1
-assert_file_glob "$HOME/.notes.txt"
-rm -f "$HOME/.notes.txt"
+echo -e "\n🧪 Functional Tests: note (default — saves to cwd)"
+(cd /tmp && note "Test Note" >/dev/null 2>&1)
+assert_file_glob "/tmp/notes.txt"
+rm -f "/tmp/notes.txt"
+
+echo -e "\n🧪 Functional Tests: note (configured DOTFILES_NOTES_FILE)"
+DOTFILES_NOTES_FILE="/tmp/custom_notes.txt" note "Custom Path Note" >/dev/null 2>&1
+assert_file_glob "/tmp/custom_notes.txt"
+rm -f "/tmp/custom_notes.txt"
+
+echo -e "\n🧪 Functional Tests: note-config (existence)"
+if command -v note-config >/dev/null 2>&1 || [ "$(type -t note-config 2>/dev/null)" = "function" ]; then
+    echo -e "  ✅ [PASSED] note-config is defined"
+    ((test_passed++))
+else
+    echo -e "  ❌ [FAILED] note-config is not defined"
+    ((test_failed++))
+fi
 
 echo -e "\n🧪 Functional Tests: compress & extract"
 touch "/tmp/data"
@@ -432,13 +453,28 @@ rm -rf "/tmp/test_pyclean"
 
 echo -e "\n🧪 Functional Tests: Dev Tools"
 # calc
-calc_out=$(calc "1+1")
+calc_out=$(echo "1+1" | calc "1+1" 2>/dev/null)
 if [ $? -eq 0 ]; then
     echo -e "  ✅ [PASSED] calc (executed)"
     ((test_passed++))
 else
     echo -e "  ❌ [FAILED] calc"
     ((test_failed++))
+fi
+
+# calc (awk fallback)
+# Temporarily hide bc to test awk fallback
+if [ -f "/tmp/dotfiles_mock_bin/bc" ]; then
+    mv "/tmp/dotfiles_mock_bin/bc" "/tmp/dotfiles_mock_bin/bc_hidden"
+    calc_fallback=$(calc "2+2" 2>/dev/null </dev/null)
+    if [ $? -eq 0 ]; then
+        echo -e "  ✅ [PASSED] calc awk fallback (result: $calc_fallback)"
+        ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] calc awk fallback"
+        ((test_failed++))
+    fi
+    mv "/tmp/dotfiles_mock_bin/bc_hidden" "/tmp/dotfiles_mock_bin/bc"
 fi
 
 # server & json (basic existence check)
@@ -603,6 +639,16 @@ if eval "gds" | grep -q "new-file.txt"; then
     ((test_passed++))
 else
     echo -e "  ❌ [FAILED] gds"
+    ((test_failed++))
+fi
+
+# gdss (side-by-side diff — function should exist and run)
+gdss >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "  ✅ [PASSED] gdss (side-by-side diff)"
+    ((test_passed++))
+else
+    echo -e "  ❌ [FAILED] gdss"
     ((test_failed++))
 fi
 

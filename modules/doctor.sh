@@ -2,7 +2,6 @@
 # ============================================================================
 # 🩺 THE DOT DOCTOR (Health Check)
 # ============================================================================
-
 unalias dotdoctor 2>/dev/null || true
 function dotdoctor() {
     echo -e "\n\033[1;35m=================================================================\033[0m"
@@ -13,9 +12,8 @@ function dotdoctor() {
     local critical_tools=(zoxide starship fzf rg fd lazygit gh jq xh uv)
     
     # OS-Specific Additions
-    [ "$IS_WIN" != "true" ] && critical_tools+=(brew)
+    critical_tools+=(brew)
     [ "$IS_LINUX" = "true" ] && critical_tools+=(trash-put)
-    [ "$IS_WIN" = "true" ] && critical_tools+=(netstat)
 
     echo -e "\033[1;33m🔍 Checking Critical Tools...\033[0m"
     for tool in "${critical_tools[@]}"; do

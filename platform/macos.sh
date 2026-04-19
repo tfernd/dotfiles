@@ -2,7 +2,6 @@
 # ============================================================================
 # MACOS SPECIFIC OVERRIDES & TWEAKS
 # ============================================================================
-
 # Apple Silicon specific path if not in standard shellenv
 _path_add "/opt/homebrew/bin"
 

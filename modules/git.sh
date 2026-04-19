@@ -2,7 +2,6 @@
 # ============================================================================
 # GIT WORKFLOWS & FUNCTIONS
 # ============================================================================
-
 # --- Git Time Machine (Redo) ---
 # Resets the repository to a previous state using a fuzzy-selected reflog entry.
 unalias gr 2>/dev/null || true
@@ -23,8 +22,16 @@ function gr() {
             --prompt "Time Machine > " | awk '{print $1}')
 
     if [ -n "$target" ]; then
-        git reset --soft "$target"
-        echo "✅ Moved HEAD to $target. Your files are in the staging area."
+        echo -e "⚠️  Reset HEAD to: \033[1;33m$target\033[0m"
+        echo -e "   (Changes will stay staged)"
+        echo -n "Proceed? (y/N): "
+        read -r confirm
+        if [[ "$confirm" =~ ^[yY] ]]; then
+            git reset --soft "$target"
+            echo "✅ Moved HEAD to $target. Your files are in the staging area."
+        else
+            echo "Cancelled."
+        fi
     else
         echo "❌ Redoing cancelled."
     fi
@@ -37,13 +44,77 @@ function gr() {
 alias gs='git status -sb'
 alias gd='git diff'
 alias gds='git diff --staged'
+unalias gdss 2>/dev/null || true
+function gdss() {
+    if [ "$HAS_DELTA" = "true" ]; then
+        git diff --staged | delta --side-by-side
+    else
+        git diff --staged
+    fi
+}
 alias gb='git branch'
 alias gba='git branch -a'
 alias ga='git add --all'
-alias gam='git commit --amend --no-edit'
-alias gpf='git push --force-with-lease'
-alias gu='git reset --soft HEAD~1'
 alias gl='git log --graph --abbrev-commit --decorate --date=relative --format=format:"%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)" -n 15'
+
+# gam — Git Amend (with confirmation)
+unalias gam 2>/dev/null || true
+function gam() {
+    local last=$(git log -1 --oneline 2>/dev/null)
+    if [ -z "$last" ]; then
+        echo "❌ No commits to amend."
+        return 1
+    fi
+    echo -e "⚠️  Amend last commit: \033[1;33m$last\033[0m"
+    echo -n "Proceed? (y/N): "
+    read -r confirm
+    if [[ "$confirm" =~ ^[yY] ]]; then
+        git commit --amend --no-edit
+        echo "✅ Amended."
+    else
+        echo "Cancelled."
+    fi
+}
+
+# gpf — Git Push Force (with RED warning + confirmation)
+unalias gpf 2>/dev/null || true
+function gpf() {
+    local branch=$(git branch --show-current 2>/dev/null)
+    if [ -z "$branch" ]; then
+        echo "❌ Not on a branch."
+        return 1
+    fi
+    echo -e "\033[1;31m🚨 FORCE PUSH to remote branch: $branch\033[0m"
+    echo -e "\033[1;31m   This rewrites remote history and can break other people's work!\033[0m"
+    echo -n "Are you sure? (y/N): "
+    read -r confirm
+    if [[ "$confirm" =~ ^[yY] ]]; then
+        git push --force-with-lease
+        echo "✅ Force pushed to $branch."
+    else
+        echo "Cancelled."
+    fi
+}
+
+# gu — Git Undo (with confirmation)
+unalias gu 2>/dev/null || true
+function gu() {
+    local last=$(git log -1 --oneline 2>/dev/null)
+    if [ -z "$last" ]; then
+        echo "❌ No commits to undo."
+        return 1
+    fi
+    echo -e "⚠️  Undo last commit: \033[1;33m$last\033[0m"
+    echo -e "   (Changes will stay staged)"
+    echo -n "Proceed? (y/N): "
+    read -r confirm
+    if [[ "$confirm" =~ ^[yY] ]]; then
+        git reset --soft HEAD~1
+        echo "✅ Undone. Changes are in the staging area."
+    else
+        echo "Cancelled."
+    fi
+}
 
 if [ "$HAS_GH" = "true" ]; then
     alias pr='gh pr create --web'
