@@ -23,11 +23,14 @@ else
 fi
 
 # Detect platform
-IS_MAC=false; IS_LINUX=false
+IS_MAC=false; IS_LINUX=false; IS_WSL=false
 case "$OSTYPE" in
     darwin*) IS_MAC=true ;;
     linux*) IS_LINUX=true ;;
 esac
+if [ "$IS_LINUX" = "true" ] && grep -qi microsoft /proc/version 2>/dev/null; then
+    IS_WSL=true
+fi
 
 function has_tool() {
     command -v "$1" >/dev/null 2>&1 && echo "true" || echo "false"
@@ -174,7 +177,14 @@ function setup_terminal() {
             cmatrix telnet \
             zsh-autosuggestions zsh-syntax-highlighting \
             curl jq procps lsof wget bat fd-find fzf ripgrep \
-            unzip zip p7zip-full unrar-free xz-utils zstd bzip2
+            unzip zip p7zip-full unrar-free xz-utils zstd bzip2 \
+            xdg-utils
+
+        # WSL: install wslu for browser integration (wslview)
+        if [ "$IS_WSL" = "true" ] && [ "$(has_tool wslview)" = "false" ]; then
+            echo -e "\033[1;33m📦 Installing wslu (WSL browser integration)...\033[0m"
+            sudo apt install -y wslu
+        fi
 
         # GitHub CLI (gh) via official apt repository
         if [ "$(has_tool gh)" = "false" ]; then

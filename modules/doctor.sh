@@ -44,6 +44,26 @@ function dotdoctor() {
         fi
     done
 
+    echo -e "\n\033[1;33m🌐 Checking Browser Opener...\033[0m"
+    if [ "$IS_MAC" = "true" ]; then
+        # macOS always has 'open'
+        printf "  ✅ \033[1;32m%-15s\033[0m : Found (macOS built-in)\n" "open"
+    elif [ "$IS_WSL" = "true" ]; then
+        if command -v wslview >/dev/null 2>&1; then
+            printf "  ✅ \033[1;32m%-15s\033[0m : Found\n" "wslview"
+        else
+            printf "  ❌ \033[1;31m%-15s\033[0m : MISSING (install wslu)\n" "wslview"
+            missing_tools+=("wslview")
+        fi
+    elif [ "$IS_LINUX" = "true" ]; then
+        if command -v xdg-open >/dev/null 2>&1; then
+            printf "  ✅ \033[1;32m%-15s\033[0m : Found\n" "xdg-open"
+        else
+            printf "  ❌ \033[1;31m%-15s\033[0m : MISSING (install xdg-utils)\n" "xdg-open"
+            missing_tools+=("xdg-open")
+        fi
+    fi
+
     if [ ${#missing_tools[@]} -gt 0 ]; then
         echo -e "\n\033[1;31m🛑 DOCTOR'S ORDERS:\033[0m"
         echo -e "Some tools are missing. Run \033[1;32msetup-terminal\033[0m to install them automatically."
