@@ -67,6 +67,9 @@ All tools are installed automatically by `install.sh`.
 | zsh-syntax-highlighting         | Shell syntax coloring plugin        |  ✅   |    ✅     | Homebrew / APT                 |
 | Oh My Zsh                       | Zsh framework                       |  ✅   |    ✅     | Official installer             |
 | FiraCode Nerd Font              | Terminal font with icons            |  ✅   |    ✅     | Homebrew cask / download       |
+| **Browser Integration**         |                                     |       |           |                                |
+| `xdg-open` (xdg-utils)          | Open URLs/files in default browser  |  ❌   |    ✅     | APT                            |
+| `wslview` (wslu)                | Open URLs in Windows browser (WSL)  |  ❌   |    ✅⁵    | APT / shim fallback            |
 | **Linux/WSL Only**              |                                     |       |           |                                |
 | `build-essential`               | Core dev tools (gcc, make)          |  ❌   |    ✅     | APT                            |
 | `zsh`                           | Z Shell                             |  ✅⁴  |    ✅     | built-in / APT                 |
@@ -82,7 +85,8 @@ All tools are installed automatically by `install.sh`.
 > ¹ Installed as `batcat` on Debian/Ubuntu; symlinked to `bat` automatically  
 > ² Installed as `fdfind` on Debian/Ubuntu; symlinked to `fd` automatically  
 > ³ Linux uses `trash-put` from trash-cli (APT)  
-> ⁴ Pre-installed or bundled with the OS
+> ⁴ Pre-installed or bundled with the OS  
+> ⁵ On WSL distros where `wslu` is not in apt repos, a lightweight shim is installed to `~/.local/bin/wslview`
 
 ---
 
@@ -202,18 +206,18 @@ These aliases warn when using legacy tools and suggest modern alternatives:
 
 ### 🛡️ Setup & Maintenance
 
-| Command               | Description                              | WSL | Linux | macOS |
-| --------------------- | ---------------------------------------- | :-: | :---: | :---: |
-| `setup-terminal`      | Re-run installer (fix/update tools)      | ✅  |  ✅   |  ✅   |
-| `dotdoctor`           | Health check (verify all tools + caches) | ✅  |  ✅   |  ✅   |
-| `editor-config`       | Print recommended VS Code/Kiro settings  | ✅  |  ✅   |  ✅   |
-| `refresh`             | Rebuild tool cache + reload shell        | ✅  |  ✅   |  ✅   |
-| `hclear`              | Securely wipe terminal history           | ✅  |  ✅   |  ✅   |
-| `git-setup`           | Interactive git user.name/email config   | ✅  |  ✅   |  ✅   |
-| `ssh-setup`           | Generate ed25519 key + add to agent      | ✅  |  ✅   |  ✅   |
-| `ssh-login`           | Start ssh-agent + load key               | ✅  |  ✅   |  ✅   |
-| `ssh-test`            | Test SSH connection to GitHub            | ✅  |  ✅   |  ✅   |
-| `dotfiles-share-root` | Share dotfiles with root user            | ✅  |  ✅   |  ✅   |
+| Command               | Description                             | WSL | Linux | macOS |
+| --------------------- | --------------------------------------- | :-: | :---: | :---: |
+| `setup-terminal`      | Re-run installer (fix/update tools)     | ✅  |  ✅   |  ✅   |
+| `dotdoctor`           | Health check (tools, caches, browser)   | ✅  |  ✅   |  ✅   |
+| `editor-config`       | Print recommended VS Code/Kiro settings | ✅  |  ✅   |  ✅   |
+| `refresh`             | Rebuild tool cache + reload shell       | ✅  |  ✅   |  ✅   |
+| `hclear`              | Securely wipe terminal history          | ✅  |  ✅   |  ✅   |
+| `git-setup`           | Interactive git user.name/email config  | ✅  |  ✅   |  ✅   |
+| `ssh-setup`           | Generate ed25519 key + add to agent     | ✅  |  ✅   |  ✅   |
+| `ssh-login`           | Start ssh-agent + load key              | ✅  |  ✅   |  ✅   |
+| `ssh-test`            | Test SSH connection to GitHub           | ✅  |  ✅   |  ✅   |
+| `dotfiles-share-root` | Share dotfiles with root user           | ✅  |  ✅   |  ✅   |
 
 ### 🎮 Fun & Aesthetics
 
