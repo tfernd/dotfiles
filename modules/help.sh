@@ -58,6 +58,7 @@ function myhelp() {
     print_cmd "gdss"   "Git diff staged (side-by-side view)"
     print_cmd "gb, gba" "List branches, List all branches (inc. remote)"
     print_cmd "gl, ga" "Git log (beautiful graph), Git add all"
+    print_cmd "gp"     "Git push (current branch to remote)"
     print_cmd "gu, gr" "Git Undo / Redo (with confirmation prompt)"
     print_cmd "gam"    "Git Amend (add to last commit quietly)"
     print_cmd "gpf"    "Git Push (Safe Force for amended commits)"
@@ -76,6 +77,7 @@ function myhelp() {
     print_cmd "envup"   "Load variables from a .env file"
     print_cmd "pyclean" "Delete all __pycache__ and compiled files"
     print_cmd "server"  "Start a simple Python web server (default :8000)"
+    print_cmd "uv-upgrade" "Upgrade all UV-managed global tools"
     print_cmd "json"    "Pretty-print minified JSON from stdin"
     print_cmd "calc"    "Command line calculator (usage: calc \"1 + 1\")"
 

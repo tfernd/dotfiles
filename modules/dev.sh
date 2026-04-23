@@ -139,3 +139,10 @@ function calc() {
     fi
 }
 [ -n "$ZSH_VERSION" ] && alias calc='noglob calc'
+
+# uv-upgrade — Upgrade all UV-managed global tools
+unalias uv-upgrade 2>/dev/null || true
+function uv-upgrade() {
+    ssh-add -l &>/dev/null || ssh-login
+    uv run --no-project "$DOTFILES_DIR/scripts/uv-upgrade.py"
+}

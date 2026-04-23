@@ -56,6 +56,7 @@ alias gb='git branch'
 alias gba='git branch -a'
 alias ga='git add --all'
 alias gl='git log --graph --abbrev-commit --decorate --date=relative --format=format:"%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)" -n 15'
+alias gp='git push'
 
 # gam — Git Amend (with confirmation)
 unalias gam 2>/dev/null || true
