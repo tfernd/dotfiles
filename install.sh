@@ -180,10 +180,21 @@ function setup_terminal() {
             unzip zip p7zip-full unrar-free xz-utils zstd bzip2 \
             xdg-utils
 
-        # WSL: install wslu for browser integration (wslview)
+        # WSL: ensure a browser opener is available (wslview or shim)
         if [ "$IS_WSL" = "true" ] && [ "$(has_tool wslview)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing wslu (WSL browser integration)...\033[0m"
-            sudo apt install -y wslu
+            echo -e "\033[1;33m📦 Installing wslview (WSL browser integration)...\033[0m"
+            if sudo apt install -y wslu 2>/dev/null; then
+                echo "✅ wslu installed via apt"
+            else
+                echo "📦 wslu not in apt repos, installing wslview shim..."
+                cat > "$HOME/.local/bin/wslview" << 'SHIM'
+#!/bin/bash
+# Minimal wslview shim — opens URLs/files in the Windows default browser
+powershell.exe -NoProfile -Command "Start-Process '$1'" 2>/dev/null
+SHIM
+                chmod +x "$HOME/.local/bin/wslview"
+                echo "✅ wslview shim installed to ~/.local/bin/wslview"
+            fi
         fi
 
         # GitHub CLI (gh) via official apt repository
