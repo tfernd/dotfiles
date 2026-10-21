@@ -11,7 +11,8 @@ if [[ "$HAS_ZOXIDE" == "true" ]]; then
     fi
     source "$_ZOX_CACHE"
 
-    if (( $+functions[z] )); then
+    # Agents keep plain cd: a mistyped path must fail, not fuzzy-jump elsewhere
+    if (( $+functions[z] )) && [[ "$IS_AGENT" != "true" ]]; then
         cd() {
             if (( $# == 0 )) || [[ "$1" == "-" || "$1" == ".." || -d "$1" ]]; then
                 builtin cd "$@"

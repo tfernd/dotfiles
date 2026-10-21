@@ -129,7 +129,7 @@ done
 
 # ---------------------------------------------------------------------------
 echo -e "\n${C_CYN}▸ Shell integration${C_RST}"
-require_shell ls          "eza listing"
+require_shell ll          "eza listing (ls stays plain in agent shells)"
 require_shell cat         "bat viewer"
 require_shell rl          "trash list"
 require_shell rt          "trash restore"

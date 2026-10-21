@@ -1,7 +1,7 @@
 # ============================================================================
 # LINUX (DEBIAN) SPECIFIC
 # ============================================================================
-export GPG_TTY=$(tty)
+[[ -t 0 ]] && export GPG_TTY=$(tty)
 
 # Do not sync mouse selection into CLIPBOARD. Leftover autocutsel from older
 # dotfiles made every desktop/Chrome selection overwrite the clipboard.

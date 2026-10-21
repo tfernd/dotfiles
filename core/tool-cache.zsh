@@ -4,6 +4,7 @@
 
 function has_tool() { (( $+commands[$1] )) && echo true || echo false }
 function has_any() {
+    local t
     for t in "$@"; do (( $+commands[$t] )) && { echo true; return }; done
     echo false
 }
@@ -39,6 +40,7 @@ EOF
 fi
 
 source "$_cache"
+unset _cache _cache_src _cache_hash
 
 # Rebuild cache and restart
 alias refresh='rm -f "$HOME/.cache/dotfiles_tools" "$HOME/.cache/starship_init.zsh" "$HOME/.cache/atuin_init.zsh" "$HOME/.cache/zoxide_init.zsh" "$HOME/.cache/gh_completion.zsh" && exec zsh --login'

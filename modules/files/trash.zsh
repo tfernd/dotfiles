@@ -2,32 +2,44 @@
 # SAFE DELETION (rm/del → Trash)
 # ============================================================================
 
+# Loaded in every shell, AI/agent shells included: nothing is deleted for good
+# through `rm`, it goes to the trash. (`command rm` and scripts still bypass it.)
 if [[ "$HAS_TRASH" == "true" ]]; then
-    function rm() {
-        local args=()
-        local force=false
+    function _trash_items() {
+        if [[ "$HAS_TRASH_PUT" == "true" ]]; then
+            command trash-put -- "$@"
+        else
+            command trash "$@"
+        fi
+    }
 
+    function rm() {
+        local args=() arg
+        local force=false opts_done=false
+
+        # rm's own flags (-r, -i, -v, ...) don't apply to trash; only -f matters
         for arg in "$@"; do
-            case "$arg" in
-                -rf|-f|-fr) force=true ;;
-                -*) ;;
-                *) args+=("$arg") ;;
-            esac
+            if [[ "$opts_done" == "false" ]]; then
+                case "$arg" in
+                    --)      opts_done=true; continue ;;
+                    --force) force=true; continue ;;
+                    --*)     continue ;;
+                    -?*)     [[ "$arg" == *f* ]] && force=true; continue ;;
+                esac
+            fi
+            args+=("$arg")
         done
 
-        local existing=()
+        local existing=() item
         for item in "${args[@]}"; do
-            [[ -e "$item" ]] && existing+=("$item")
+            [[ -e "$item" || -L "$item" ]] && existing+=("$item")
         done
 
         if (( ${#existing[@]} > 0 )); then
-            if [[ "$HAS_TRASH_PUT" == "true" ]]; then
-                command trash-put "${existing[@]}"
-            else
-                command trash "${existing[@]}"
-            fi
+            _trash_items "${existing[@]}"
         elif [[ "$force" == "false" ]] && (( ${#args[@]} > 0 )); then
-            [[ "$HAS_TRASH_PUT" == "true" ]] && command trash-put "${args[@]}" || command trash "${args[@]}"
+            # Nothing exists: let the trash tool print its "not found" error
+            _trash_items "${args[@]}"
         fi
     }
     alias del='rm'

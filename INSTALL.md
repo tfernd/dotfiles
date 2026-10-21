@@ -40,7 +40,7 @@ Continue the Linux steps **inside that Debian WSL**.
 
 ```bash
 sudo apt update && sudo apt install -y git curl
-git clone https://github.com/username/dotfiles.git ~/.dotfiles
+git clone https://github.com/tfernd/dotfiles.git ~/.dotfiles
 bash ~/.dotfiles/install.sh
 ```
 
@@ -48,7 +48,7 @@ bash ~/.dotfiles/install.sh
 
 ```bash
 xcode-select --install   # if git/curl are missing
-git clone https://github.com/username/dotfiles.git ~/.dotfiles
+git clone https://github.com/tfernd/dotfiles.git ~/.dotfiles
 bash ~/.dotfiles/install.sh
 ```
 
@@ -91,7 +91,7 @@ Optional later:
 ./update-versions.sh --apply  # write those pins into versions.toml
 bash install.sh               # install the new pins
 
-zsh test/suite.zsh            # alias/function suite
+zsh -f test/suite.zsh         # alias/function suite
 bash ./verify-status.sh       # Starship git pills (creates .verify-status-worktree/)
 refresh                       # rebuild tool caches + reload zsh
 ```

@@ -3,13 +3,15 @@
 # ============================================================================
 
 # --- File Listing (eza or platform fallback) ---
+# --color=auto / --icons=auto keep piped output plain (no escape codes or glyphs)
 if [[ "$HAS_EZA" == "true" ]]; then
-    alias ls='eza --icons --group-directories-first --color=always'
-    alias ll='eza -l --icons --group-directories-first --color=always --time-style=long-iso --git --git-repos'
-    alias lt='eza --tree --icons --group-directories-first -L 2 --color=always'
-    alias lsh='eza -a --icons --group-directories-first --color=always'
-    alias llh='eza -la --icons --group-directories-first --color=always --time-style=long-iso --git --git-repos'
-    alias lth='eza -a --tree --icons --group-directories-first -L 2 --color=always'
+    # Agents get the real ls: tools parse its output and expect its flags
+    [[ "$IS_AGENT" != "true" ]] && alias ls='eza --icons=auto --group-directories-first --color=auto'
+    alias ll='eza -l --icons=auto --group-directories-first --color=auto --time-style=long-iso --git --git-repos'
+    alias lt='eza --tree --icons=auto --group-directories-first -L 2 --color=auto'
+    alias lsh='eza -a --icons=auto --group-directories-first --color=auto'
+    alias llh='eza -la --icons=auto --group-directories-first --color=auto --time-style=long-iso --git --git-repos'
+    alias lth='eza -a --tree --icons=auto --group-directories-first -L 2 --color=auto'
 elif [[ "$DOTFILES_PLATFORM" == "macos" ]]; then
     export CLICOLOR=1
     export LSCOLORS='Gxfxcxdxbxegedabagacad'

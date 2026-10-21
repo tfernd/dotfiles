@@ -2,8 +2,8 @@
 # OH MY ZSH + STARSHIP PROMPT
 # ============================================================================
 
-# Fast-path: bypass prompts, colors, and UI plugins for non-interactive or dumb/AI terminals
-if [[ ! -o interactive ]] || [[ "$TERM" == "dumb" ]]; then
+# Fast-path: bypass prompts, colors, and UI plugins in agent / non-interactive shells
+if [[ "$IS_AGENT" == "true" ]]; then
     PROMPT='%# '
     return 0 2>/dev/null || exit 0
 fi

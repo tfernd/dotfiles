@@ -105,7 +105,7 @@ assert_defined myip
 assert_defined localip
 assert_defined port
 assert_defined kill-port
-assert_defined sleep
+assert_defined sudok
 assert_defined http
 assert_defined copy
 assert_defined cpwd
@@ -118,6 +118,8 @@ assert_defined please
 
 echo -e "\n🔍 Checking Autoloaded Functions..."
 assert_defined server
+assert_defined envup
+assert_defined pyclean
 assert_defined git-setup
 assert_defined ssh-setup
 assert_defined c
@@ -177,6 +179,83 @@ fi
 
 cd "$DOT_DIR"
 command rm -rf "$GIT_ROOT" >/dev/null 2>&1
+
+function assert_eq() {
+    if [[ "$2" == "$3" ]]; then
+        echo -e "  ✅ [PASSED] $1"
+        ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] $1 (expected '$3', got '$2')"
+        ((test_failed++))
+    fi
+}
+
+echo -e "\n🧪 Functional: Agent mode (this suite runs non-interactively)"
+assert_eq "IS_AGENT=true in non-interactive shell" "$IS_AGENT" "true"
+assert_eq "ls is not aliased for agents" "$(alias ls >/dev/null 2>&1 && echo aliased || echo plain)" "plain"
+assert_eq "cd is the builtin for agents" "$(whence -w cd)" "cd: builtin"
+assert_eq "ll uses --color=auto" "$(alias ll | grep -c -- '--color=auto')" "1"
+assert_eq "rm is the trash wrapper for agents" "$(whence -w rm)" "rm: function"
+
+# Interactive human shell: eza ls alias, IS_AGENT=false
+human=$(env -u CLAUDECODE -u DOTFILES_AGENT TERM=xterm-256color HOME="$HOME" PATH="$PATH" \
+    zsh -f -i -c "source '$DOT_DIR/core/init.zsh' >/dev/null 2>&1; print -r -- \"\$IS_AGENT|\$(alias ls)\"" </dev/null 2>/dev/null | tail -1)
+assert_eq "IS_AGENT=false in interactive shell" "${human%%|*}" "false"
+assert_eq "interactive ls is eza with auto colour/icons" "${human#*|}" "ls='eza --icons=auto --group-directories-first --color=auto'"
+agent=$(env CLAUDECODE=1 TERM=xterm-256color HOME="$HOME" PATH="$PATH" \
+    zsh -f -i -c "source '$DOT_DIR/core/init.zsh' >/dev/null 2>&1; print -r -- \"\$IS_AGENT\"" </dev/null 2>/dev/null | tail -1)
+assert_eq "CLAUDECODE=1 forces IS_AGENT=true" "$agent" "true"
+
+echo -e "\n🧪 Functional: History options"
+assert_eq "INC_APPEND_HISTORY off (SHARE_HISTORY covers it)" "$([[ -o INC_APPEND_HISTORY ]] && echo on || echo off)" "off"
+
+echo -e "\n🧪 Functional: rm → trash"
+TRASH_ROOT="/tmp/test_trash_wrapper"
+command rm -rf "$TRASH_ROOT"; mkdir -p "$TRASH_ROOT" && cd "$TRASH_ROOT"
+touch plain -- -dashed
+rm plain
+assert_eq "rm trashes a file" "$([[ -e plain ]] && echo kept || echo gone)" "gone"
+rm -- -dashed
+assert_eq "rm -- handles names starting with '-'" "$([[ -e ./-dashed ]] && echo kept || echo gone)" "gone"
+rm --force missing-file >/dev/null 2>&1
+assert_eq "rm --force on a missing file succeeds" "$?" "0"
+rm -fR missing-dir >/dev/null 2>&1
+assert_eq "rm -fR (combined flags) on a missing path succeeds" "$?" "0"
+cd "$DOT_DIR"; command rm -rf "$TRASH_ROOT"
+
+echo -e "\n🧪 Functional: envup"
+ENV_FILE="/tmp/test_envup.env"
+print -r -- '# comment
+  SPACED_KEY = spaced value
+DQ_VAR="double quoted"
+SQ_VAR='"'"'single quoted'"'"'
+EQ_VAR=a=b
+9BAD=nope' > "$ENV_FILE"
+unset SPACED_KEY DQ_VAR SQ_VAR EQ_VAR
+envup_out=$(envup "$ENV_FILE")
+envup "$ENV_FILE" >/dev/null
+assert_eq "envup trims whitespace" "$SPACED_KEY" "spaced value"
+assert_eq "envup strips double quotes" "$DQ_VAR" "double quoted"
+assert_eq "envup strips single quotes" "$SQ_VAR" "single quoted"
+assert_eq "envup keeps '=' in values" "$EQ_VAR" "a=b"
+assert_eq "envup skips invalid keys" "$envup_out" "✅ Loaded 4 variables from $ENV_FILE"
+command rm -f "$ENV_FILE"
+
+echo -e "\n🧪 Functional: pyclean"
+PYC_ROOT="/tmp/test_pyclean"
+command rm -rf "$PYC_ROOT"
+mkdir -p "$PYC_ROOT/proj/build/lib" "$PYC_ROOT/proj/pkg.egg-info" "$PYC_ROOT/proj/src/__pycache__" \
+         "$PYC_ROOT/proj/.venv/__pycache__" "$PYC_ROOT/other/build"
+touch "$PYC_ROOT/proj/pyproject.toml" "$PYC_ROOT/proj/build/lib/x.py" "$PYC_ROOT/proj/pkg.egg-info/PKG-INFO" \
+      "$PYC_ROOT/proj/src/__pycache__/m.pyc" "$PYC_ROOT/proj/.venv/__pycache__/a.pyc" "$PYC_ROOT/other/build/keep.txt"
+( cd "$PYC_ROOT/proj" && pyclean >/dev/null 2>&1 )
+( cd "$PYC_ROOT/other" && pyclean >/dev/null 2>&1 )
+assert_eq "pyclean removes __pycache__" "$([[ -d $PYC_ROOT/proj/src/__pycache__ ]] && echo kept || echo removed)" "removed"
+assert_eq "pyclean removes non-empty build/ in a Python project" "$([[ -d $PYC_ROOT/proj/build ]] && echo kept || echo removed)" "removed"
+assert_eq "pyclean removes non-empty *.egg-info" "$([[ -d $PYC_ROOT/proj/pkg.egg-info ]] && echo kept || echo removed)" "removed"
+assert_eq "pyclean leaves .venv alone" "$([[ -f $PYC_ROOT/proj/.venv/__pycache__/a.pyc ]] && echo kept || echo removed)" "kept"
+assert_eq "pyclean keeps build/ outside Python projects" "$([[ -f $PYC_ROOT/other/build/keep.txt ]] && echo kept || echo removed)" "kept"
+command rm -rf "$PYC_ROOT"
 
 echo -e "\n📊 Results: $test_passed Passed, $test_failed Failed."
 if (( test_failed > 0 )); then

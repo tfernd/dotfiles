@@ -1,7 +1,7 @@
 # ============================================================================
 # WSL2 SPECIFIC
 # ============================================================================
-export GPG_TTY=$(tty)
+[[ -t 0 ]] && export GPG_TTY=$(tty)
 
-# Ensure Windows interop paths are available
-_path_add "/mnt/c/Windows/System32"
+# Windows interop paths go LAST: lookups on /mnt/c are slow, and Linux tools must win
+[[ -d "/mnt/c/Windows/System32" ]] && path+=("/mnt/c/Windows/System32")

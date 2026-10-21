@@ -18,7 +18,7 @@ for tool in "${TOOLS[@]}"; do
 #!/usr/bin/env bash
 case "$0" in
     *trash-put|*/trash)
-        for arg in "$@"; do [ -f "$arg" ] && rm -f "$arg"; done
+        for arg in "$@"; do [ "$arg" != "--" ] && [ -f "$arg" ] && rm -f -- "$arg"; done
         exit 0 ;;
 esac
 if [ $# -eq 0 ]; then exit 0; fi

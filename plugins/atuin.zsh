@@ -2,8 +2,8 @@
 # ATUIN SHELL HISTORY INTEGRATION (cached for instant startup)
 # ============================================================================
 
-# Skip interactive history hooks in non-interactive or dumb/AI terminals
-if [[ ! -o interactive ]] || [[ "$TERM" == "dumb" ]]; then
+# Skip interactive history hooks in agent / non-interactive shells
+if [[ "$IS_AGENT" == "true" ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
