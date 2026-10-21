@@ -1,0 +1,48 @@
+# Smart archive extraction
+if [[ -z "$1" ]]; then
+    echo -e "📝 \033[1;33mUsage:\033[0m extract <archive_file> [destination]"
+    return 1
+fi
+
+if [[ ! -f "$1" ]]; then
+    echo "❌ File '$1' not found!"
+    return 1
+fi
+
+local dest="${2:-.}"
+if [[ "$dest" != "." ]] && [[ ! -d "$dest" ]]; then
+    mkdir -p "$dest"
+fi
+
+case "$1" in
+    *.tar.bz2|*.tbz2) tar xvjf "$1" -C "$dest"        ;;
+    *.tar.gz|*.tgz)   tar xvzf "$1" -C "$dest"        ;;
+    *.tar.xz|*.txz)   tar xvJf "$1" -C "$dest"        ;;
+    *.tar.zst)        tar --zstd -xvf "$1" -C "$dest" ;;
+    *.tar)            tar xvf "$1" -C "$dest"         ;;
+    *.zip)            unzip "$1" -d "$dest"           ;;
+    *.rar)
+        if command -v unar &>/dev/null; then
+            unar -o "$dest" "$1"
+        elif command -v unrar &>/dev/null; then
+            unrar x "$1" "$dest/"
+        else
+            echo "❌ No RAR extractor found (install 'unar' or 'unrar')"; return 1
+        fi
+        ;;
+    *.7z)             7z x "$1" -o"$dest"             ;;
+    *.bz2)            bunzip2 -kc "$1" > "$dest/$(basename "${1%.bz2}")" ;;
+    *.gz)             gunzip -kc "$1" > "$dest/$(basename "${1%.gz}")"  ;;
+    *.Z)              gunzip -kc "$1" > "$dest/$(basename "${1%.Z}")"   ;;
+    *.xz)             unxz -kc "$1" > "$dest/$(basename "${1%.xz}")"    ;;
+    *.zst)            unzstd -o "$dest/$(basename "${1%.zst}")" "$1" ;;
+    *)                echo "❌ Unknown archive format: '$1'"; return 1 ;;
+esac
+
+if [[ $? -eq 0 ]]; then
+    [[ "$dest" != "." ]] && echo "📂 Extracted to $dest"
+    return 0
+else
+    echo "❌ Extraction failed!"
+    return 1
+fi

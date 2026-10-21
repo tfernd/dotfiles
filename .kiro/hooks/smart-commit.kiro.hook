@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Smart Commit",
+  "description": "Generates commit message via sub-agent to keep main context clean.",
+  "version": "6",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Generate a commit message. Follow these steps silently without explaining them to the user:\n\n1. CONTEXT SUMMARY: Scan the chat session and create a brief summary (max 10 lines) of what was worked on, problems solved, and design decisions made. If no relevant context, note that.\n\n2. TARGET PATH: Get from user message after /smart-commit. If not provided, use '.' (current repo root).\n\n3. DELEGATE: Use invokeSubAgent with name 'general-task-execution' passing this prompt:\n\n\"You are a commit message generator.\n\nSession context:\n[YOUR SUMMARY HERE]\n\nTarget path: [PATH FROM USER]\n\nInstructions:\n1. Run from workspace root: bash .kiro/scripts/smart-commit-context.sh [PATH]\n2. The script auto-detects repos, worktrees, and submodules from the path.\n3. If nothing staged, tell the user and stop.\n4. Analyze the diff output and determine type (feat/fix/docs/refactor/etc).\n5. Combine diff analysis with session context to write the commit message.\n6. Check the branch name in the script output - if it's 'kiro', no Jira ticket needed.\n7. For other branches, include [DATA-NNNN] if mentioned in session context.\n8. Return ONLY this format:\n\n## Commit Analysis\n[1-2 sentences on type/scope choice]\n\n## Command\n```bash\ngit -C [path] commit -F- <<'EOF'\ntype(scope): subject max 72 chars\n\n- bullet 1\n- bullet 2\nEOF\n```\n\nRules: max 72 char subject, lowercase type, never --no-verify, always use git -C [path]\"\n\n4. PRESENT: Show the sub-agent's response to the user without additional commentary."
+  }
+}

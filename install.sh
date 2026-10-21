@@ -1,363 +1,626 @@
 #!/usr/bin/env bash
 # ============================================================================
-# THE DOTFILES MASTER INSTALLER
+# 🚀 DOTFILES BOOTSTRAP (bare-metal entry point)
 # ============================================================================
-# Copies dotfiles to ~/.dotfiles, hooks into your shells (bash/zsh),
-# and installs all required professional tools.
-#
 # Usage:
-#   git clone https://github.com/tfernd/dotfiles.git /tmp/dotfiles
-#   bash /tmp/dotfiles/install.sh
-#
-# Options:
-#   (none)      Install missing tools only
-#   --upgrade   Also upgrade already-installed tools
-#   --force     Force full reinstall
+#   git clone https://github.com/username/dotfiles.git ~/.dotfiles
+#   bash ~/.dotfiles/install.sh
 # ============================================================================
+set -euo pipefail
 
-# Resolve directory of this script
-if [ -n "$ZSH_VERSION" ]; then
-    SCRIPT_DIR="${${(%):-%x}:A:h}"
-else
-    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-fi
+echo -e "\n\033[1;36m=================================================================\033[0m"
+echo -e "\033[1;35m  🚀 DOTFILES BARE-METAL BOOTSTRAP\033[0m"
+echo -e "\033[1;36m=================================================================\033[0m\n"
 
-# Detect platform
-IS_MAC=false; IS_LINUX=false; IS_WSL=false
+DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
+TARGET_DIR="${HOME}/.dotfiles"
+
+# ============================================================================
+# STEP 0: Detect platform
+# ============================================================================
+PLATFORM=""
 case "$OSTYPE" in
-    darwin*) IS_MAC=true ;;
-    linux*) IS_LINUX=true ;;
+    darwin*)
+        PLATFORM="macos"
+        ;;
+    linux*)
+        if grep -qi microsoft /proc/version 2>/dev/null; then
+            PLATFORM="wsl"
+        else
+            PLATFORM="debian"
+        fi
+        ;;
+    *)
+        echo "❌ Unsupported platform: $OSTYPE"
+        exit 1
+        ;;
 esac
-if [ "$IS_LINUX" = "true" ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    IS_WSL=true
+echo -e "🖥️  Platform detected: \033[1;33m${PLATFORM}\033[0m\n"
+
+# ============================================================================
+# STEP 1: Install ALL system packages (assumes user has NOTHING)
+# ============================================================================
+echo -e "\033[1;34m📦 STEP 1: Installing system packages...\033[0m\n"
+
+if [[ "$PLATFORM" == "macos" ]]; then
+    if ! xcode-select -p &>/dev/null; then
+        echo "🔧 Installing Xcode Command Line Tools..."
+        xcode-select --install 2>/dev/null || true
+        echo "   ⏳ Waiting for Xcode CLI tools (press any key when done)..."
+        read -r -n 1
+    fi
+
+    if ! command -v brew &>/dev/null; then
+        echo "🍺 Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -x /usr/local/bin/brew ]]; then
+        eval "$(/usr/local/bin/brew shellenv)"
+    else
+        echo "❌ FATAL: Homebrew not found after install (/opt/homebrew or /usr/local)."
+        exit 1
+    fi
+
+    echo "📦 Installing tools via Homebrew..."
+    brew install \
+        zsh curl wget coreutils \
+        starship zoxide atuin zellij bat eza ripgrep trash-cli yq xh fzf \
+        git git-delta jq bun \
+        p7zip zip unzip xz zstd unar \
+        zsh-autosuggestions zsh-syntax-highlighting
+    brew install --cask font-fira-code-nerd-font 2>/dev/null || true
+
+else
+    echo "📦 Updating APT package lists..."
+    sudo apt update -y
+
+    if command -v add-apt-repository &>/dev/null; then
+        if ! grep -qr "^deb.*universe" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+            echo "  Enabling universe repository..."
+            sudo add-apt-repository -y universe 2>/dev/null || true
+            sudo apt update -y
+        fi
+    fi
+
+    echo ""
+    echo "📦 Installing required system packages..."
+    sudo apt install -y \
+        zsh \
+        git \
+        curl \
+        wget \
+        build-essential \
+        ca-certificates \
+        gnupg \
+        lsb-release \
+        procps \
+        lsof \
+        bc \
+        jq \
+        fontconfig \
+        xdg-utils \
+        trash-cli \
+        fzf \
+        xclip \
+        p7zip-full \
+        unzip \
+        zip \
+        gzip \
+        tar \
+        unrar-free \
+        xz-utils \
+        zstd \
+        bzip2 \
+        libssl-dev \
+        libcurl4-openssl-dev \
+        libexpat1-dev \
+        zlib1g-dev \
+        gettext
+    sudo apt install -y \
+        zsh-autosuggestions \
+        zsh-syntax-highlighting \
+        2>/dev/null || true
+
+    # WSL-specific packages
+    if [[ "$PLATFORM" == "wsl" ]]; then
+        sudo apt install -y wslu 2>/dev/null || true
+    fi
 fi
 
-function has_tool() {
-    command -v "$1" >/dev/null 2>&1 && echo "true" || echo "false"
-}
+echo -e "\n✅ System packages installed.\n"
 
-function bootstrap() {
-    local target_dir="$HOME/.dotfiles"
-    echo -e "\n\033[1;34m🛠️  BOOTSTRAPPING DOTFILES...\033[0m"
+# ============================================================================
+# STEP 2: Set zsh as default shell
+# ============================================================================
+echo -e "\033[1;34m🐚 STEP 2: Setting zsh as default shell...\033[0m\n"
 
-    # 1. Copy files to ~/.dotfiles (no .git needed in target)
-    if [ "$SCRIPT_DIR" != "$target_dir" ]; then
-        echo "🚚 Copying dotfiles to $target_dir..."
-        mkdir -p "$target_dir"
-        # Copy all files except .git directory
-        rsync -a --exclude='.git' "$SCRIPT_DIR/" "$target_dir/" 2>/dev/null \
-            || (cd "$SCRIPT_DIR" && find . -path ./.git -prune -o -print | while read f; do
-                if [ -d "$f" ]; then mkdir -p "$target_dir/$f"
-                else cp -f "$f" "$target_dir/$f" 2>/dev/null; fi
-            done)
-        echo "✅ Dotfiles installed to $target_dir"
+ZSH_PATH="$(command -v zsh 2>/dev/null || true)"
+if [[ -z "$ZSH_PATH" ]]; then
+    echo "❌ FATAL: zsh not found after installation. Cannot continue."
+    exit 1
+fi
+
+if [[ "${SHELL:-}" != "$ZSH_PATH" ]]; then
+    if ! grep -qx "$ZSH_PATH" /etc/shells 2>/dev/null; then
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null 2>&1
     fi
+    echo "  Setting $ZSH_PATH as default shell..."
+    sudo chsh -s "$ZSH_PATH" "$USER" 2>/dev/null || chsh -s "$ZSH_PATH" 2>/dev/null || true
+    echo "  ✅ Default shell: zsh"
+else
+    echo "  ✅ zsh is already the default shell"
+fi
+echo ""
 
-    # 2. Replace Shell Configs with clean loader (backup old ones first)
-    local source_line='[ -f $HOME/.dotfiles/init.sh ] && source $HOME/.dotfiles/init.sh'
-    local custom_line='[ -f "$HOME/.custom.zsh" ] && source "$HOME/.custom.zsh"'
-
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-        if [ -f "$rc" ]; then
-            # Always backup the existing file
-            local backup="${rc}.$(date +%Y%m%d_%H%M%S).bak"
-            cp "$rc" "$backup"
-            echo -e "💾 Backed up \033[1;33m$(basename "$rc")\033[0m -> \033[1;36m$backup\033[0m"
-        fi
-
-        # Write a clean shell config
-        if [[ "$rc" == *".zshrc" ]]; then
-            cat > "$rc" << EOF
 # ============================================================================
-# 🚀 DOTFILES LOADER (managed by ~/.dotfiles/install.sh)
+# STEP 3: Install Oh My Zsh + plugins
 # ============================================================================
-# Your old config was backed up. Personal aliases go in ~/.custom.zsh
-# Template: cp ~/.dotfiles/custom.example.sh ~/.custom.zsh
-# ============================================================================
+echo -e "\033[1;34m🐚 STEP 3: Installing Oh My Zsh...\033[0m\n"
 
-# Load the modular dotfiles
-$source_line
-
-# Load your personal overrides (if the file exists)
-$custom_line
-EOF
-        else
-            cat > "$rc" << EOF
-# ============================================================================
-# 🚀 DOTFILES LOADER (managed by ~/.dotfiles/install.sh)
-# ============================================================================
-# Your old config was backed up. Personal aliases go in ~/.custom.zsh
-# Template: cp ~/.dotfiles/custom.example.sh ~/.custom.zsh
-# ============================================================================
-
-# Load the modular dotfiles
-$source_line
-
-# Load your personal overrides (if the file exists)
-$custom_line
-EOF
-        fi
-        echo -e "✅ Wrote clean \033[1;32m$(basename "$rc")\033[0m"
-    done
-
-    # 3. Deploy Starship Config (Pills design)
-    echo "🎨 Deploying Starship configuration..."
-    mkdir -p "$HOME/.config"
-    rm -f "$HOME/.config/starship.toml" 2>/dev/null
-    cp -f "$target_dir/starship.toml" "$HOME/.config/starship.toml"
-
-}
-
-function setup_terminal() {
-    echo -e "\n\033[1;36m=================================================================\033[0m"
-    echo -e "\033[1;35m  🚀 STARTING ULTIMATE TERMINAL SETUP\033[0m"
-    echo -e "\033[1;36m=================================================================\033[0m\n"
-
-    # --- Enterprise Git: SSH for enterprise only ---
-    # If an enterprise GitHub host is detected (e.g. github.disney.com), ensure
-    # SSH is used for that host. Public github.com stays on HTTPS (no auth needed).
-    # This replaces the old approach of whitelisting every public org individually.
-    if command -v git >/dev/null 2>&1; then
-        local _gh_enterprise=""
-        _gh_enterprise=$(git config --global --get-regexp 'credential\.https://.*\.helper' 2>/dev/null \
-            | grep -iv 'credential\.https://github\.com[^.]' \
-            | head -1 \
-            | sed -E 's|^credential\.https://([^/]+).*|\1|')
-
-        if [ -z "$_gh_enterprise" ]; then
-            _gh_enterprise=$(git config --global --get-regexp 'url\..*\.insteadof' 2>/dev/null \
-                | grep -iv 'github\.com/' \
-                | head -1 \
-                | sed -E 's|^url\.[^/]*//([^/]+)/.*|\1|')
-        fi
-
-        if [ -n "$_gh_enterprise" ] && [ "$_gh_enterprise" != "github.com" ]; then
-            # Only add if not already set
-            if ! git config --global --get "url.ssh://git@${_gh_enterprise}/.insteadOf" >/dev/null 2>&1; then
-                git config --global url."ssh://git@${_gh_enterprise}/".insteadOf "https://${_gh_enterprise}/"
-                echo "🔧 Enterprise SSH rewrite: https://${_gh_enterprise}/ → ssh://git@${_gh_enterprise}/"
-            fi
-        fi
-        unset _gh_enterprise
+if [[ ! -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then
+    echo "  Installing Oh My Zsh (pinned commit)..."
+    OMZ_COMMIT="4b657407c98bbc8830ae66c2ac7ff3d737c55a83"  # 2026-08-29
+    git clone --filter=blob:none https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+    # Full clone already fetched history; only fetch the pinned commit if it isn't present.
+    (cd "$HOME/.oh-my-zsh" \
+        && { git cat-file -e "${OMZ_COMMIT}^{commit}" 2>/dev/null || git fetch --depth=1 origin "$OMZ_COMMIT"; } \
+        && git checkout --detach "$OMZ_COMMIT")
+    OMZ_HEAD="$(git -C "$HOME/.oh-my-zsh" rev-parse HEAD)"
+    if [[ "$OMZ_HEAD" != "$OMZ_COMMIT" ]]; then
+        echo "❌ FATAL: Oh My Zsh HEAD is ${OMZ_HEAD}, expected ${OMZ_COMMIT}"
+        exit 1
     fi
+    echo "  ✅ Oh My Zsh installed (commit: ${OMZ_COMMIT:0:12})"
+else
+    echo "  ✅ Oh My Zsh already installed"
+fi
 
-    # --- Tool Installation (macOS & Linux) ---
-    if [ "$IS_MAC" = "true" ]; then
-        echo -e "\033[1;34m🍎 macOS Detected. Installing via Homebrew...\033[0m"
-        if [ "$(has_tool brew)" = "false" ]; then
-            echo "🍺 Installing Homebrew..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null
-        fi
+ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]]; then
+    echo "  Cloning zsh-autosuggestions..."
+    git clone --depth=1 --branch v0.7.1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" 2>/dev/null || true
+fi
+if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]]; then
+    echo "  Cloning zsh-syntax-highlighting..."
+    git clone --depth=1 --branch 0.8.0 https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" 2>/dev/null || true
+fi
+echo ""
 
-        if [ "$UPGRADE_MODE" = "true" ]; then
-            echo "📦 Upgrading all Homebrew packages..."
-            brew update && brew upgrade
-        fi
+# ============================================================================
+# STEP 4: Install Nerd Fonts
+# ============================================================================
+echo -e "\033[1;34m🔡 STEP 4: Installing FiraCode Nerd Font...\033[0m\n"
 
-        # Install only missing packages (brew install is a no-op for already installed)
-        echo "📦 Installing missing tools via Homebrew..."
-        brew install starship zoxide bat eza ripgrep fd fzf trash-cli gh lazygit yazi bottom yq xh \
-            git-delta jq tealdeer bc cmatrix telnet \
-            p7zip zip unzip xz zstd \
-            zsh-autosuggestions zsh-syntax-highlighting 2>/dev/null
+FONT_VER=$(grep 'firacode-nerd' "$DOTFILES_DIR/versions.toml" | sed -E 's/.*version = "([^"]+)".*/\1/')
+if [[ -z "$FONT_VER" ]]; then FONT_VER="3.3.0"; fi
 
-        echo "🔡 Installing FiraCode Nerd Font..."
-        brew install --cask font-fira-code-nerd-font 2>/dev/null || true
-    elif [ "$IS_LINUX" = "true" ]; then
-        echo -e "\033[1;34m🐧 Linux Detected. Installing via APT...\033[0m"
-        sudo apt update
-
-        if [ "$UPGRADE_MODE" = "true" ]; then
-            echo "📦 Upgrading all APT packages..."
-            sudo apt upgrade -y
-        fi
-
-        sudo apt install -y git build-essential zsh tealdeer trash-cli xclip fontconfig bc \
-            cmatrix telnet \
-            zsh-autosuggestions zsh-syntax-highlighting \
-            curl jq procps lsof wget bat fd-find fzf ripgrep \
-            unzip zip p7zip-full unrar-free xz-utils zstd bzip2 \
-            xdg-utils
-
-        # WSL: ensure a browser opener is available (wslview or shim)
-        if [ "$IS_WSL" = "true" ] && [ "$(has_tool wslview)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing wslview (WSL browser integration)...\033[0m"
-            if sudo apt install -y wslu 2>/dev/null; then
-                echo "✅ wslu installed via apt"
-            else
-                echo "📦 wslu not in apt repos, installing wslview shim..."
-                cat > "$HOME/.local/bin/wslview" << 'SHIM'
-#!/bin/bash
-# Minimal wslview shim — opens URLs/files in the Windows default browser
-powershell.exe -NoProfile -Command "Start-Process '$1'" 2>/dev/null
-SHIM
-                chmod +x "$HOME/.local/bin/wslview"
-                echo "✅ wslview shim installed to ~/.local/bin/wslview"
-            fi
-        fi
-
-        # GitHub CLI (gh) via official apt repository
-        if [ "$(has_tool gh)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing GitHub CLI (gh)...\033[0m"
-            sudo mkdir -p -m 755 /etc/apt/keyrings
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-            sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt update && sudo apt install -y gh
-        fi
-
-        # Starship prompt
-        if [ "$(has_tool starship)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing Starship...\033[0m"
-            curl -sS https://starship.rs/install.sh | sh -s -- -y
-        fi
-
-        # Zoxide
-        if [ "$(has_tool zoxide)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing Zoxide...\033[0m"
-            curl -sS https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | bash
-        fi
-
-        # git-delta
-        if [ "$(has_tool delta)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing git-delta...\033[0m"
-            local DELTA_VER=$(curl -s "https://api.github.com/repos/dandavison/delta/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-            curl -Lo /tmp/git-delta.deb "https://github.com/dandavison/delta/releases/download/${DELTA_VER}/git-delta_${DELTA_VER}_$(dpkg --print-architecture).deb"
-            sudo dpkg -i /tmp/git-delta.deb && rm -f /tmp/git-delta.deb
-        fi
-
-        # Fix Debian/Ubuntu binary naming
-        mkdir -p ~/.local/bin
-        [ -f "$(command -v fdfind)" ] && ln -sf "$(command -v fdfind)" ~/.local/bin/fd 2>/dev/null
-        [ -f "$(command -v batcat)" ] && ln -sf "$(command -v batcat)" ~/.local/bin/bat 2>/dev/null
-
-        # FiraCode Nerd Font
-        if ! fc-list 2>/dev/null | grep -qi "FiraCode Nerd"; then
-            echo -e "\033[1;33m🔡 Installing FiraCode Nerd Font...\033[0m"
-            mkdir -p ~/.local/share/fonts
-            curl -Lo /tmp/FiraCode.zip "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip"
-            unzip -o /tmp/FiraCode.zip -d ~/.local/share/fonts/
-            fc-cache -fv ~/.local/share/fonts/
-            rm -f /tmp/FiraCode.zip
-        fi
-
-        # Linuxbrew for tools not available via APT
-        if [ "$(has_tool brew)" = "false" ]; then
-            echo -e "\033[1;33m📦 Installing Linuxbrew...\033[0m"
-            NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)" 2>/dev/null
-        fi
-
-        if [ "$(has_tool brew)" = "true" ]; then
-            if [ "$UPGRADE_MODE" = "true" ]; then
-                echo "📦 Upgrading Linuxbrew packages..."
-                brew update && brew upgrade
-            fi
-            echo "📦 Installing missing tools via Linuxbrew..."
-            brew install eza lazygit xh yazi bottom yq 2>/dev/null
-        fi
-    fi
-
-    # --- Bun Runtime ---
-    if [ "$(has_tool bun)" = "false" ]; then
-        echo "🍞 Installing Bun..."
-        curl -fsSL https://bun.sh/install | bash
-    fi
-
-    # --- Oh My Zsh ---
-    if [ "$CURRENT_SHELL" = "zsh" ] || [ "$(has_tool zsh)" = "true" ]; then
-        if [ ! -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]; then
-            # Remove stale/broken OMZ directory if it exists
-            [ -d "$HOME/.oh-my-zsh" ] && rm -rf "$HOME/.oh-my-zsh"
-            echo "🐚 Installing Oh My Zsh..."
-            RUNZSH=no KEEP_ZSHRC=yes sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" || true
-
-            # Verify installation succeeded
-            if [ ! -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]; then
-                echo -e "\033[1;33m⚠️  Oh My Zsh installation failed. Zsh will work without it.\033[0m"
-            fi
-        fi
-
-        # Set zsh as default shell if it isn't already
-        local zsh_path=$(command -v zsh 2>/dev/null)
-        if [ -n "$zsh_path" ] && [ "$SHELL" != "$zsh_path" ]; then
-            echo "🐚 Setting zsh as default shell..."
-            if grep -q "$zsh_path" /etc/shells 2>/dev/null; then
-                chsh -s "$zsh_path" 2>/dev/null || sudo chsh -s "$zsh_path" "$USER" 2>/dev/null || true
-            else
-                echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null 2>&1
-                chsh -s "$zsh_path" 2>/dev/null || sudo chsh -s "$zsh_path" "$USER" 2>/dev/null || true
-            fi
-        fi
-    fi
-
-    # --- UV Standalone Installation (Astral) ---
-    if [ "$(has_tool uv)" = "false" ]; then
-        echo "🐍 Installing UV via official standalone installer (astral.sh)..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+if [[ "$PLATFORM" == "macos" ]]; then
+    brew install --cask font-fira-code-nerd-font 2>/dev/null || true
+    echo "  ✅ FiraCode Nerd Font installed"
+else
+    if fc-list : family 2>/dev/null | grep -qi "FiraCode" || [[ -d "$HOME/.local/share/fonts" && $(find "$HOME/.local/share/fonts" -name "*FiraCode*" | head -1) ]]; then
+        echo "  ✅ FiraCode Nerd Font already installed"
     else
-        echo "🐍 UV already installed, skipping."
+        echo "  Downloading FiraCode Nerd Font v${FONT_VER}..."
+        mkdir -p "$HOME/.local/share/fonts"
+        curl -fsSL -o /tmp/FiraCode.zip \
+            "https://github.com/ryanoasis/nerd-fonts/releases/download/v${FONT_VER}/FiraCode.zip"
+        unzip -qo /tmp/FiraCode.zip -d "$HOME/.local/share/fonts/"
+        fc-cache -f "$HOME/.local/share/fonts/" 2>/dev/null || true
+        rm -f /tmp/FiraCode.zip
+        echo "  ✅ FiraCode Nerd Font v${FONT_VER} installed"
     fi
+fi
+echo ""
 
-    # --- Post-Install: Git Config (Delta) ---
-    if [ "$(has_tool delta)" = "true" ]; then
-        echo -e "\n🔧 Configuring git to use delta..."
-        git config --global core.pager "delta"
-        git config --global interactive.diffFilter "delta --color-only"
-        git config --global delta.navigate true
-        git config --global delta.light false
-        git config --global merge.conflictstyle zdiff3
-    fi
+# ============================================================================
+# STEP 5: Install pinned CLI tools (quarantine + checksum verified)
+# git, uv, gh: Debian / WSL / macOS. Other tools: Linux binaries.
+# ============================================================================
+echo -e "\033[1;34m🔧 STEP 5: Installing pinned CLI tools...\033[0m\n"
 
-    # --- Re-deploy configs (OMZ installer may have overwritten .zshrc) ---
-    bootstrap
+mkdir -p "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 
-    echo -e "\n💡 Run \033[1;36meditor-config\033[0m to get recommended VS Code / Kiro settings for your terminal."
-    echo -e "\n\033[1;32m🎉 Setup complete! Reloading your shell...\033[0m"
-    exec $SHELL --login
-}
+ARCH="" YQ_ARCH="" BUN_ARCH="" DELTA_TRIPLE="" UV_TRIPLE="" GH_OS="" GH_ARCH=""
+case "$(uname -m)" in
+    x86_64|amd64)
+        ARCH="x86_64"
+        YQ_ARCH="amd64"
+        BUN_ARCH="x64"
+        DELTA_TRIPLE="x86_64-unknown-linux-musl"
+        GH_ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        ARCH="aarch64"
+        YQ_ARCH="arm64"
+        BUN_ARCH="aarch64"
+        DELTA_TRIPLE="aarch64-unknown-linux-gnu"
+        GH_ARCH="arm64"
+        ;;
+    *)
+        echo "❌ FATAL: unsupported arch $(uname -m) (need x86_64 or aarch64)"
+        exit 1
+        ;;
+esac
+if [[ "$PLATFORM" == "macos" ]]; then
+    UV_TRIPLE="${ARCH}-apple-darwin"
+    GH_OS="macOS"
+else
+    UV_TRIPLE="${ARCH}-unknown-linux-musl"
+    GH_OS="linux"
+fi
 
-REQUIRED_TOOLS=("starship" "zoxide" "eza" "bat" "rg" "fd" "fzf" "trash" "gh" "lazygit" "yazi" "btm" "yq" "uv" "xh" "delta")
+    _ver() { grep "^$1" "$DOTFILES_DIR/versions.toml" | sed -E 's/.*version = "([^"]+)".*/\1/'; }
+    _released() { grep "^$1" "$DOTFILES_DIR/versions.toml" | sed -E 's/.*released = "([^"]+)".*/\1/'; }
 
-function check_all_tools() {
-    for tool in "${REQUIRED_TOOLS[@]}"; do
-        if [ "$tool" = "trash" ]; then
-            # On Linux, trash-cli provides "trash-put" instead of "trash"
-            if [ "$(has_tool trash-put)" = "false" ] && [ "$(has_tool trash)" = "false" ]; then
-                return 1
-            fi
-        elif [ "$(has_tool $tool)" = "false" ]; then
+    _github_digest() {
+        local url="$1"
+        local repo tag asset
+        repo=$(echo "$url" | sed -E 's|https://github.com/([^/]+/[^/]+)/releases/download/.*|\1|')
+        tag=$(echo "$url" | sed -E 's|https://github.com/[^/]+/[^/]+/releases/download/([^/]+)/.*|\1|')
+        asset="${url##*/}"
+        curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" \
+            | jq -r --arg n "$asset" '.assets[] | select(.name == $n) | .digest // empty'
+    }
+
+    _install_bin() {
+        local name="$1" url="$2" checksum_url="$3" extract_cmd="$4" binary_path="$5"
+        local tmpfile=$(mktemp "/tmp/${name}-XXXXXX")
+        curl -fsSL -o "$tmpfile" "$url" || { echo "    ❌ Download failed for $name"; rm -f "$tmpfile"; return 1; }
+
+        local expected=""
+        if [[ -n "$checksum_url" ]]; then
+            local sums
+            sums=$(curl -fsSL "$checksum_url") || { echo "    ❌ Checksum download failed for $name"; rm -f "$tmpfile"; return 1; }
+            expected=$(echo "$sums" | awk -v n="${url##*/}" 'index($0, n) {print $1; exit}')
+            [[ -z "$expected" ]] && expected=$(echo "$sums" | awk '{print $1; exit}')
+        else
+            local digest
+            digest=$(_github_digest "$url")
+            [[ "$digest" == sha256:* ]] && expected="${digest#sha256:}"
+        fi
+        if [[ -z "$expected" ]]; then
+            echo "    ❌ No SHA256 available for $name"
+            rm -f "$tmpfile"
             return 1
         fi
-    done
-    return 0
-}
+        local actual
+        actual=$(sha256sum "$tmpfile" 2>/dev/null | awk '{print $1}')
+        [[ -z "$actual" ]] && actual=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
+        if [[ "$expected" != "$actual" ]]; then
+            echo "    ❌ CHECKSUM MISMATCH for $name!"
+            rm -f "$tmpfile"
+            return 1
+        fi
 
-# --- Execution ---
-FORCE_SETUP=false
-UPGRADE_MODE=false
-[[ "$*" == *"--help"* ]] && {
-    echo "Usage: bash install.sh [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  (none)      Install missing tools only"
-    echo "  --upgrade   Also upgrade already-installed tools"
-    echo "  --force     Force full reinstall of everything"
-    echo "  --help      Show this help message and exit"
-    exit 0
-}
-[[ "$*" == *"--force"* ]]   && FORCE_SETUP=true
-[[ "$*" == *"--upgrade"* ]] && UPGRADE_MODE=true
+        case "$extract_cmd" in
+            tar)
+                local extract_dir="/tmp/${name}-extract"
+                rm -rf "$extract_dir" && mkdir -p "$extract_dir"
+                tar xzf "$tmpfile" -C "$extract_dir" 2>/dev/null
+                cp -f "$extract_dir/${binary_path}" "$HOME/.local/bin/"
+                rm -rf "$extract_dir"
+                ;;
+            zip)
+                local tmpdir=$(mktemp -d "/tmp/${name}-zip-XXXXXX")
+                unzip -qo "$tmpfile" -d "$tmpdir" 2>/dev/null
+                local bin_found=$(find "$tmpdir" -name "$name" -type f | head -1)
+                [[ -z "$bin_found" ]] && bin_found=$(find "$tmpdir" -name "${binary_path##*/}" -type f | head -1)
+                cp -f "$bin_found" "$HOME/.local/bin/$name"
+                rm -rf "$tmpdir"
+                ;;
+            binary)
+                cp -f "$tmpfile" "$HOME/.local/bin/$name"
+                ;;
+        esac
+        chmod +x "$HOME/.local/bin/$name" 2>/dev/null || true
+        rm -f "$tmpfile"
+        echo "    ✅ $name installed"
+    }
 
-export UPGRADE_MODE
+    _ensure() {
+        local name="$1" cmd="$2" pinned_ver="$3" released_date="$4"
+        shift 4
+        if [[ -n "$released_date" ]]; then
+            local release_epoch=$(date -d "$released_date" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$released_date" +%s 2>/dev/null || echo 0)
+            local now_epoch=$(date +%s)
+            local age_days=$(( (now_epoch - release_epoch) / 86400 ))
+            if (( age_days < 14 )); then
+                echo "  ⏳ $name v$pinned_ver: in quarantine (${age_days}d old) — SKIPPING"
+                return 0
+            fi
+        fi
 
-bootstrap
+        local cmd_path=""
+        if [[ -x "$HOME/.local/bin/$cmd" ]]; then
+            cmd_path="$HOME/.local/bin/$cmd"
+        elif command -v "$cmd" &>/dev/null; then
+            cmd_path=$(command -v "$cmd")
+        fi
 
-# Trigger setup if tools are missing, --force, or --upgrade
-if [ "$FORCE_SETUP" = "true" ] || [ "$UPGRADE_MODE" = "true" ] || ! check_all_tools; then
-    setup_terminal
-else
-    echo -e "\n\033[1;32m🎉 Everything is wired up! Open a new tab to see your new prompt.\033[0m"
-    echo -e "💡 TIP: Run \033[1;36msetup-terminal\033[0m anytime to fix your environment or reinstall tools.\n"
+        if [[ -n "$cmd_path" ]]; then
+            local installed_ver=$("$cmd_path" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+[0-9.]*' | head -1)
+            if [[ "$installed_ver" == "$pinned_ver" ]]; then
+                printf "  ✅ %-12s v%-10s (up to date)\n" "$name" "$installed_ver"
+                return 0
+            fi
+        fi
+
+        printf "  📦 %-12s installing v%s\n" "$name" "$pinned_ver"
+        _install_bin "$name" "$@"
+    }
+
+    _quarantined() {
+        local name="$1" pinned_ver="$2" released_date="$3"
+        if [[ -z "$released_date" ]]; then
+            return 0
+        fi
+        local release_epoch now_epoch age_days
+        release_epoch=$(date -d "$released_date" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$released_date" +%s 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        age_days=$(( (now_epoch - release_epoch) / 86400 ))
+        if (( age_days < 14 )); then
+            echo "  ⏳ $name v$pinned_ver: in quarantine (${age_days}d old) — SKIPPING"
+            return 1
+        fi
+        return 0
+    }
+
+    # git: no portable binaries; build the pinned tarball into ~/.local (Debian/WSL/macOS)
+    _install_git() {
+        local v="$1" r="$2"
+        _quarantined "git" "$v" "$r" || return 0
+        local cmd_path=""
+        if [[ -x "$HOME/.local/bin/git" ]]; then
+            cmd_path="$HOME/.local/bin/git"
+        elif command -v git &>/dev/null; then
+            cmd_path=$(command -v git)
+        fi
+        if [[ -n "$cmd_path" ]]; then
+            local installed_ver
+            installed_ver=$("$cmd_path" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+[0-9.]*' | head -1)
+            if [[ "$installed_ver" == "$v" ]]; then
+                printf "  ✅ %-12s v%-10s (up to date)\n" "git" "$installed_ver"
+                return 0
+            fi
+        fi
+        printf "  📦 %-12s installing v%s from source\n" "git" "$v"
+        local url="https://mirrors.edge.kernel.org/pub/software/scm/git/git-${v}.tar.xz"
+        local sums_url="https://mirrors.edge.kernel.org/pub/software/scm/git/sha256sums.asc"
+        local tmpfile extract_dir jobs
+        tmpfile=$(mktemp "/tmp/git-XXXXXX")
+        curl -fsSL -o "$tmpfile" "$url" || { echo "    ❌ Download failed for git"; rm -f "$tmpfile"; return 1; }
+        local expected actual
+        expected=$(curl -fsSL "$sums_url" | awk -v n="git-${v}.tar.xz" 'index($0, n) {print $1; exit}')
+        actual=$(sha256sum "$tmpfile" 2>/dev/null | awk '{print $1}')
+        [[ -z "$actual" ]] && actual=$(shasum -a 256 "$tmpfile" | awk '{print $1}')
+        if [[ -z "$expected" || "$expected" != "$actual" ]]; then
+            echo "    ❌ CHECKSUM MISMATCH for git"
+            rm -f "$tmpfile"
+            return 1
+        fi
+        extract_dir="/tmp/git-extract"
+        rm -rf "$extract_dir" && mkdir -p "$extract_dir"
+        tar xJf "$tmpfile" -C "$extract_dir"
+        rm -f "$tmpfile"
+        jobs=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+        (cd "$extract_dir/git-${v}" && make prefix="$HOME/.local" NO_TCLTK=1 -j"$jobs" all && make prefix="$HOME/.local" NO_TCLTK=1 install) \
+            || { echo "    ❌ git build failed"; rm -rf "$extract_dir"; return 1; }
+        rm -rf "$extract_dir"
+        echo "    ✅ git v${v} installed"
+    }
+
+    if [[ "$PLATFORM" == "macos" ]]; then
+        # macOS: git is provided by Homebrew (Step 1); no source build needed.
+        _git_ver_now=$(git --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+[0-9.]*' | head -1)
+        printf "  ✅ %-12s v%-10s (via Homebrew)\n" "git" "${_git_ver_now:-?}"
+    else
+        v=$(_ver git); r=$(_released git)
+        _install_git "$v" "$r"
+    fi
+
+    # uv (Debian / WSL / macOS)
+    v=$(_ver uv); r=$(_released uv)
+    _ensure "uv" "uv" "$v" "$r" \
+        "https://github.com/astral-sh/uv/releases/download/${v}/uv-${UV_TRIPLE}.tar.gz" \
+        "https://github.com/astral-sh/uv/releases/download/${v}/uv-${UV_TRIPLE}.tar.gz.sha256" \
+        "tar" "uv-${UV_TRIPLE}/uv"
+
+    # gh (Debian / WSL / macOS) — GitHub release, not apt/brew latest
+    v=$(_ver gh); r=$(_released gh)
+    if [[ "$PLATFORM" == "macos" ]]; then
+        _ensure "gh" "gh" "$v" "$r" \
+            "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_${GH_OS}_${GH_ARCH}.zip" \
+            "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_checksums.txt" \
+            "zip" "gh"
+    else
+        _ensure "gh" "gh" "$v" "$r" \
+            "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_${GH_OS}_${GH_ARCH}.tar.gz" \
+            "https://github.com/cli/cli/releases/download/v${v}/gh_${v}_checksums.txt" \
+            "tar" "gh_${v}_${GH_OS}_${GH_ARCH}/bin/gh"
+    fi
+
+if [[ "$PLATFORM" != "macos" ]]; then
+    # starship
+    v=$(_ver starship); r=$(_released starship)
+    _ensure "starship" "starship" "$v" "$r" \
+        "https://github.com/starship/starship/releases/download/v${v}/starship-${ARCH}-unknown-linux-musl.tar.gz" \
+        "https://github.com/starship/starship/releases/download/v${v}/starship-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
+        "tar" "starship"
+
+    # ripgrep
+    v=$(_ver ripgrep); r=$(_released ripgrep)
+    _ensure "rg" "rg" "$v" "$r" \
+        "https://github.com/BurntSushi/ripgrep/releases/download/${v}/ripgrep-${v}-${ARCH}-unknown-linux-musl.tar.gz" \
+        "https://github.com/BurntSushi/ripgrep/releases/download/${v}/ripgrep-${v}-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
+        "tar" "ripgrep-${v}-${ARCH}-unknown-linux-musl/rg"
+
+    # zoxide
+    v=$(_ver zoxide); r=$(_released zoxide)
+    _ensure "zoxide" "zoxide" "$v" "$r" \
+        "https://github.com/ajeetdsouza/zoxide/releases/download/v${v}/zoxide-${v}-${ARCH}-unknown-linux-musl.tar.gz" \
+        "" "tar" "zoxide"
+
+    # delta (aarch64 ships gnu only; x86_64 uses musl)
+    v=$(_ver delta); r=$(_released delta)
+    _ensure "delta" "delta" "$v" "$r" \
+        "https://github.com/dandavison/delta/releases/download/${v}/delta-${v}-${DELTA_TRIPLE}.tar.gz" \
+        "" "tar" "delta-${v}-${DELTA_TRIPLE}/delta"
+
+    # eza
+    v=$(_ver eza); r=$(_released eza)
+    _ensure "eza" "eza" "$v" "$r" \
+        "https://github.com/eza-community/eza/releases/download/v${v}/eza_${ARCH}-unknown-linux-gnu.tar.gz" \
+        "" "tar" "eza"
+
+    # bat
+    v=$(_ver bat); r=$(_released bat)
+    _ensure "bat" "bat" "$v" "$r" \
+        "https://github.com/sharkdp/bat/releases/download/v${v}/bat-v${v}-${ARCH}-unknown-linux-musl.tar.gz" \
+        "" "tar" "bat-v${v}-${ARCH}-unknown-linux-musl/bat"
+
+    # xh
+    v=$(_ver xh); r=$(_released xh)
+    _ensure "xh" "xh" "$v" "$r" \
+        "https://github.com/ducaale/xh/releases/download/v${v}/xh-v${v}-${ARCH}-unknown-linux-musl.tar.gz" \
+        "" "tar" "xh-v${v}-${ARCH}-unknown-linux-musl/xh"
+
+    # yq
+    v=$(_ver yq); r=$(_released yq)
+    _ensure "yq" "yq" "$v" "$r" \
+        "https://github.com/mikefarah/yq/releases/download/v${v}/yq_linux_${YQ_ARCH}" \
+        "" \
+        "binary" "yq"
+
+    # bun
+    v=$(_ver bun); r=$(_released bun)
+    _ensure "bun" "bun" "$v" "$r" \
+        "https://github.com/oven-sh/bun/releases/download/bun-v${v}/bun-linux-${BUN_ARCH}.zip" \
+        "https://github.com/oven-sh/bun/releases/download/bun-v${v}/SHASUMS256.txt" \
+        "zip" "bun-linux-${BUN_ARCH}/bun"
+
+    # atuin
+    v=$(_ver atuin); r=$(_released atuin)
+    _ensure "atuin" "atuin" "$v" "$r" \
+        "https://github.com/atuinsh/atuin/releases/download/v${v}/atuin-${ARCH}-unknown-linux-musl.tar.gz" \
+        "https://github.com/atuinsh/atuin/releases/download/v${v}/atuin-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
+        "tar" "atuin-${ARCH}-unknown-linux-musl/atuin"
+
+    # zellij
+    v=$(_ver zellij); r=$(_released zellij)
+    _ensure "zellij" "zellij" "$v" "$r" \
+        "https://github.com/zellij-org/zellij/releases/download/v${v}/zellij-${ARCH}-unknown-linux-musl.tar.gz" \
+        "" "tar" "zellij"
 fi
+
+# Configure delta in git if installed
+if command -v delta &>/dev/null || [[ -x "$HOME/.local/bin/delta" ]]; then
+    git config --global core.pager "delta"
+    git config --global interactive.diffFilter "delta --color-only"
+    git config --global delta.navigate true
+    git config --global delta.light false
+    # zdiff3 needs Git >= 2.35; older git rejects the merge entirely
+    _git_ver=$(git version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    _git_major="${_git_ver%%.*}"
+    _git_minor="${_git_ver#*.}"
+    if [[ "${_git_major:-0}" -gt 2 ]] || { [[ "${_git_major:-0}" -eq 2 ]] && [[ "${_git_minor:-0}" -ge 35 ]]; }; then
+        git config --global merge.conflictstyle zdiff3
+    else
+        git config --global merge.conflictstyle diff3
+    fi
+fi
+
+# ============================================================================
+# STEP 6: Bootstrap dotfiles (copy to ~/.dotfiles, write ~/.zshrc)
+# ============================================================================
+echo -e "\n\033[1;34m📂 STEP 6: Bootstrapping dotfiles...\033[0m\n"
+
+if [[ "$DOTFILES_DIR" != "$TARGET_DIR" ]]; then
+    echo "🚚 Copying dotfiles to $TARGET_DIR..."
+    mkdir -p "$TARGET_DIR"
+    rsync -a --delete --exclude='.git' "$DOTFILES_DIR/" "$TARGET_DIR/" 2>/dev/null \
+        || (cd "$DOTFILES_DIR" && find . -path ./.git -prune -o -print | while read -r f; do
+            if [[ -d "$f" ]]; then mkdir -p "$TARGET_DIR/$f"
+            else cp -f "$f" "$TARGET_DIR/$f" 2>/dev/null || true; fi
+        done)
+    echo "  ✅ Dotfiles copied to $TARGET_DIR"
+fi
+
+# Ensure ~/.zshrc sources dotfiles
+local_loader='[ -f "$HOME/.dotfiles/core/init.zsh" ] && source "$HOME/.dotfiles/core/init.zsh"'
+touch "$HOME/.zshrc"
+if ! grep -qF 'dotfiles/core/init.zsh' "$HOME/.zshrc" 2>/dev/null; then
+    echo "" >> "$HOME/.zshrc"
+    echo "# 🚀 Dotfiles loader" >> "$HOME/.zshrc"
+    echo "$local_loader" >> "$HOME/.zshrc"
+    echo "  ✅ Added dotfiles loader to ~/.zshrc"
+else
+    echo "  ✅ ~/.zshrc already sources dotfiles"
+fi
+
+# Deploy starship config
+mkdir -p "$HOME/.config"
+if [[ -f "$TARGET_DIR/config/starship.toml" ]]; then
+    cp -f "$TARGET_DIR/config/starship.toml" "$HOME/.config/starship.toml"
+    echo "  🎨 Deployed Starship config"
+fi
+
+# Deploy atuin config
+if [[ -f "$TARGET_DIR/config/atuin.toml" ]]; then
+    mkdir -p "$HOME/.config/atuin"
+    cp -f "$TARGET_DIR/config/atuin.toml" "$HOME/.config/atuin/config.toml"
+    echo "  📜 Deployed Atuin config (filter_mode = directory)"
+fi
+
+# Deploy zellij config & layouts
+if [[ -d "$TARGET_DIR/config/zellij" ]]; then
+    mkdir -p "$HOME/.config/zellij/layouts"
+    [[ -f "$TARGET_DIR/config/zellij/config.kdl" ]] && cp -f "$TARGET_DIR/config/zellij/config.kdl" "$HOME/.config/zellij/config.kdl"
+    [[ -d "$TARGET_DIR/config/zellij/layouts" ]] && cp -rf "$TARGET_DIR/config/zellij/layouts/." "$HOME/.config/zellij/layouts/"
+    echo "  🪟 Deployed Zellij config & layouts"
+fi
+
+# Configure copy-on-select (terminal only — not global PRIMARY↔CLIPBOARD sync)
+if [[ "$PLATFORM" == "macos" ]]; then
+    defaults write com.googlecode.iterm2 CopySelection -bool true 2>/dev/null || true
+    defaults write com.apple.Terminal CopyOnSelect -bool true 2>/dev/null || true
+    echo "  📋 Configured macOS copy-on-select"
+fi
+
+# Reset tool cache
+rm -f "$HOME/.cache/dotfiles_tools"
+
+# ============================================================================
+# STEP 7: Verify the install (fails loudly if a promised tool is missing)
+# ============================================================================
+echo -e "\n\033[1;34m🩺 STEP 7: Verifying installation...\033[0m"
+
+DOCTOR="$TARGET_DIR/doctor.zsh"
+[[ -f "$DOCTOR" ]] || DOCTOR="$DOTFILES_DIR/doctor.zsh"
+if [[ -f "$DOCTOR" ]] && command -v zsh &>/dev/null; then
+    if ! zsh "$DOCTOR"; then
+        echo -e "\033[1;31m❌ Verification failed — some promised tools are missing (see above).\033[0m"
+        echo -e "\033[1;33m   Fix the missing tools and re-run: bash install.sh --force\033[0m"
+        exit 1
+    fi
+else
+    echo -e "\033[1;33m  ⚠️  doctor.zsh not found — skipping verification.\033[0m"
+fi
+
+# ============================================================================
+# DONE — launch zsh
+# ============================================================================
+echo -e "\n\033[1;36m=================================================================\033[0m"
+echo -e "\033[1;32m  🎉 INSTALLATION COMPLETE!\033[0m"
+echo -e "\033[1;36m=================================================================\033[0m"
+echo ""
+echo -e "  \033[1;33mNext steps:\033[0m"
+echo -e "    1. Run \033[1;32mgit-setup\033[0m to configure git identity"
+echo -e "    2. Run \033[1;32mssh-setup\033[0m to generate SSH keys"
+echo ""
+
+echo -e "\033[1;36m🐚 Launching zsh...\033[0m\n"
+exec zsh --login

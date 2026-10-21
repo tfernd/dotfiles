@@ -1,0 +1,38 @@
+# Smart archiver
+if [[ $# -lt 2 ]]; then
+    echo -e "📝 \033[1;33mUsage:\033[0m compress <archive_name[.zip|.tar.gz|.7z|etc]> <file/folder> [more files...]"
+    echo "💡 Default extension is .tar.gz if none is provided."
+    return 1
+fi
+
+local archive=$1
+shift
+
+if [[ "$archive" != *.* ]]; then
+    archive="${archive}.tar.gz"
+fi
+
+echo "📦 Compressing into $archive..."
+case "$archive" in
+    *.tar.bz2|*.tbz2) tar cvjf           "$archive" "$@" ;;
+    *.tar.gz|*.tgz)   tar cvzf           "$archive" "$@" ;;
+    *.tar.xz|*.txz)   tar cvJf           "$archive" "$@" ;;
+    *.tar.zst)        tar --zstd -cvf    "$archive" "$@" ;;
+    *.tar)            tar cvf            "$archive" "$@" ;;
+    *.zip)            zip -r             "$archive" "$@" ;;
+    *.7z)             7z a               "$archive" "$@" ;;
+    *.bz2)            bzip2 -c    "$@" > "$archive"      ;;
+    *.gz)             gzip -c     "$@" > "$archive"      ;;
+    *.xz)             xz -c       "$@" > "$archive"      ;;
+    *.zst)            zstd -c     "$@" > "$archive"      ;;
+    *.Z)              command compress -c "$@" > "$archive" ;;
+    *)                echo "❌ Unsupported format '$archive'."; return 1 ;;
+esac
+
+if [[ $? -eq 0 ]]; then
+    echo "✅ Successfully created $archive"
+    return 0
+else
+    echo "❌ Compression failed!"
+    return 1
+fi

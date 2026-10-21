@@ -1,0 +1,32 @@
+# ============================================================================
+# Git Identity Setup Wizard
+# ============================================================================
+
+echo -e "\n\033[1;36m=== Git Identity Setup ===\033[0m\n"
+local current_name=$(git config --global user.name 2>/dev/null)
+local current_email=$(git config --global user.email 2>/dev/null)
+
+if [[ -n "$current_name" ]] || [[ -n "$current_email" ]]; then
+    echo "Current config:"
+    [[ -n "$current_name" ]]  && echo -e "  Name  : \033[1;33m$current_name\033[0m"
+    [[ -n "$current_email" ]] && echo -e "  Email : \033[1;33m$current_email\033[0m"
+    echo ""
+fi
+
+echo -n "Enter your name [${current_name:-Your Name}]: "
+read -r name
+name="${name:-$current_name}"
+[[ -z "$name" ]] && { echo "❌ Name is required."; return 1 2>/dev/null || exit 1; }
+
+echo -n "Enter your email [${current_email:-you@example.com}]: "
+read -r email
+email="${email:-$current_email}"
+[[ -z "$email" ]] && { echo "❌ Email is required."; return 1 2>/dev/null || exit 1; }
+
+git config --global user.name "$name"
+git config --global user.email "$email"
+echo -e "\n✅ Git configured: \033[1;32m$name\033[0m <\033[1;32m$email\033[0m>"
+
+echo -n "\nSet up SSH key now? (y/N): "
+read -r do_ssh
+[[ "$do_ssh" =~ ^[yY] ]] && ssh-setup "$email"

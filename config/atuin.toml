@@ -1,0 +1,16 @@
+# ============================================================================
+# ATUIN CONFIGURATION
+# https://docs.atuin.sh/configuration/config/
+# ============================================================================
+
+# Search scope: "directory", "workspace", "session", "host", "global"
+filter_mode = "directory"
+
+# Filter mode specifically for Up arrow key search
+filter_mode_shell_up_key_binding = "directory"
+
+# UI style
+style = "auto"
+inline_height = 20
+show_preview = true
+enter_accept = true
