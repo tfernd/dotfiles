@@ -272,7 +272,11 @@ The canonical clone URL is `https://github.com/tfernd/dotfiles.git`.
 - Don't use `BASH_REMATCH` (zsh uses `$match`), `[ a == b ]` (use `[[ ]]`), or
   `ls $pattern` to expand a glob held in a variable (zsh doesn't glob parameters).
 - Don't run `test/uninstall.sh` unless the user explicitly asks — it deletes tools and configs.
-- Don't commit generated artifacts: `.verify-status-worktree/`, caches, `*.log`, `*.bak`.
+- Don't commit generated artifacts: `.verify-status-worktree/`, caches, `*.log`.
+- Don't make `install.sh` back up or rewrite the user's `~/.zshrc`/`~/.bashrc`. It only
+  appends the loader line if missing. (An older version replaced them and left a
+  timestamped `.bak` on every run; that destroyed real config and is gone for good.)
+- Don't add an `editor-config` (VS Code/Kiro settings printer) back; it was dropped on purpose.
 
 ---
 
