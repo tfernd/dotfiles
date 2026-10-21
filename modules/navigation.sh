@@ -47,13 +47,16 @@ function symlink() {
 
 # --- File Listing (ls/eza) ---
 if [ "$HAS_EZA" = "true" ]; then
-    alias ls='eza --icons --group-directories-first --color=always'
-    alias ll='eza -l --icons --group-directories-first --color=always --time-style=long-iso --git'
-    alias lt='eza --tree --icons --group-directories-first -L 2 --color=always'
+    # Agents (e.g. Claude Code sets CLAUDECODE) and non-interactive shells keep plain ls
+    if [[ $- == *i* ]] && [ -z "$CLAUDECODE" ]; then
+        alias ls='eza --icons=auto --group-directories-first --color=auto'
+    fi
+    alias ll='eza -l --icons=auto --group-directories-first --color=auto --time-style=long-iso --git'
+    alias lt='eza --tree --icons=auto --group-directories-first -L 2 --color=auto'
 
-    alias lsh='eza -a --icons --group-directories-first --color=always'
-    alias llh='eza -la --icons --group-directories-first --color=always --time-style=long-iso --git'
-    alias lth='eza -a --tree --icons --group-directories-first -L 2 --color=always'
+    alias lsh='eza -a --icons=auto --group-directories-first --color=auto'
+    alias llh='eza -la --icons=auto --group-directories-first --color=auto --time-style=long-iso --git'
+    alias lth='eza -a --tree --icons=auto --group-directories-first -L 2 --color=auto'
 fi
 
 # --- File Reading (cat/bat) ---

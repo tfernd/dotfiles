@@ -192,18 +192,6 @@ Type `help` in your terminal to see this list live, or `dotdoctor` to check syst
 | `jq`            | JSON processor                            | ✅  |  ✅   |  ✅   |
 | `yq`            | YAML processor                            | ✅  |  ✅   |  ✅   |
 
-### 🤖 AI Guard Aliases
-
-These aliases warn when using legacy tools and suggest modern alternatives:
-
-| Blocked Command                    | Suggested Alternative     | Condition      |
-| ---------------------------------- | ------------------------- | -------------- |
-| `node`, `npm`, `npx`               | `bun run`, `bun`, `bun x` | `HAS_BUN=true` |
-| `yarn`, `pnpm`                     | `bun`                     | `HAS_BUN=true` |
-| `nodemon`, `ts-node`, `tsx`        | `bun --watch`, `bun`      | `HAS_BUN=true` |
-| `python`, `python3`, `pip`, `pip3` | `uv run`, `uv`            | `HAS_UV=true`  |
-| `venv`, `poetry`                   | `uv venv`, `uv`           | `HAS_UV=true`  |
-
 ### 🛡️ Setup & Maintenance
 
 | Command               | Description                             | WSL | Linux | macOS |
@@ -267,7 +255,7 @@ These aliases warn when using legacy tools and suggest modern alternatives:
 │   └── linux.sh            # GPG_TTY, GNU ls colors
 │
 └── test/
-    ├── suite.sh            # Interactive mode test suite
+    ├── suite.sh            # Test suite (run with bash and zsh -f)
     └── mock_tools.sh       # Mock binaries for testing
 ```
 

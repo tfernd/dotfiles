@@ -27,7 +27,7 @@ function gr() {
         echo -n "Proceed? (y/N): "
         read -r confirm
         if [[ "$confirm" =~ ^[yY] ]]; then
-            git reset --soft "$target"
+            git reset --soft "$target" || { echo "❌ Reset failed."; return 1; }
             echo "✅ Moved HEAD to $target. Your files are in the staging area."
         else
             echo "Cancelled."
@@ -70,7 +70,7 @@ function gam() {
     echo -n "Proceed? (y/N): "
     read -r confirm
     if [[ "$confirm" =~ ^[yY] ]]; then
-        git commit --amend --no-edit
+        git commit --amend --no-edit || { echo "❌ Amend failed."; return 1; }
         echo "✅ Amended."
     else
         echo "Cancelled."
@@ -90,7 +90,7 @@ function gpf() {
     echo -n "Are you sure? (y/N): "
     read -r confirm
     if [[ "$confirm" =~ ^[yY] ]]; then
-        git push --force-with-lease
+        git push --force-with-lease || { echo "❌ Force push failed."; return 1; }
         echo "✅ Force pushed to $branch."
     else
         echo "Cancelled."
@@ -110,7 +110,7 @@ function gu() {
     echo -n "Proceed? (y/N): "
     read -r confirm
     if [[ "$confirm" =~ ^[yY] ]]; then
-        git reset --soft HEAD~1
+        git reset --soft HEAD~1 || { echo "❌ Undo failed."; return 1; }
         echo "✅ Undone. Changes are in the staging area."
     else
         echo "Cancelled."

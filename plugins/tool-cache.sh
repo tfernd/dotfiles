@@ -44,6 +44,7 @@ TOOL_CACHE_KEY="${BASHRC_HASH}:${OSTYPE:-unknown}"
 if [ ! -f "$TOOL_CACHE" ] || ! grep -q "#hash:$TOOL_CACHE_KEY" "$TOOL_CACHE" 2>/dev/null; then
     mkdir -p "$(dirname "$TOOL_CACHE")"
     # SECURITY: Restrict cache file permissions (sourced on every shell startup)
+    _TOOL_CACHE_UMASK=$(umask)
     umask 077
     cat > "$TOOL_CACHE" <<EOF
 export HAS_ZOXIDE=$(has_tool zoxide)
@@ -69,7 +70,8 @@ export HAS_BUN=$(has_tool bun)
 export HAS_FD=$(has_tool fd)
 #hash:$TOOL_CACHE_KEY
 EOF
-    umask 022
+    umask "$_TOOL_CACHE_UMASK"
+    unset _TOOL_CACHE_UMASK
 fi
 
 source "$TOOL_CACHE"

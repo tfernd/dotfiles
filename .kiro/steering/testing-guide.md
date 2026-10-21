@@ -7,8 +7,11 @@ fileMatchPattern: "test/*"
 
 ## Running Tests
 
+Run the suite under both shells: zsh is the primary shell, and some bugs only show up there.
+
 ```bash
 bash test/suite.sh
+zsh -f test/suite.sh
 ```
 
 ## Test Architecture

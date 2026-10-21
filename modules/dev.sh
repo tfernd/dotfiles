@@ -3,57 +3,29 @@
 # DEVELOPMENT UTILITY FUNCTIONS
 # ============================================================================
 
-# --- AI Bun/UV Enforcement Guards (loaded in ALL modes) ---
-function _ai_warn() { echo -e "\033[1;33m🤖 AI: Use '$1' instead of '$2'.\033[0m" >&2; }
-
-# --- JS/TS Enforcement Guards (Pro-Bun) ---
-if [ "$HAS_BUN" = "true" ]; then
-    unalias node npm npx yarn pnpm nodemon ts-node tsx 2>/dev/null || true
-    alias node='_ai_warn "bun run" "node"'
-    alias npm='_ai_warn "bun" "npm"'
-    alias npx='_ai_warn "bun x" "npx"'
-    alias yarn='_ai_warn "bun" "yarn"'
-    alias pnpm='_ai_warn "bun" "pnpm"'
-    alias nodemon='_ai_warn "bun --watch" "nodemon"'
-    alias ts-node='_ai_warn "bun" "ts-node"'
-    alias tsx='_ai_warn "bun" "tsx"'
-fi
-
-# --- Python Enforcement Guards (Pro-UV) ---
-if [ "$HAS_UV" = "true" ]; then
-    unalias python python3 pip pip3 venv poetry 2>/dev/null || true
-    alias python='_ai_warn "uv run" "python"'
-    alias pip='_ai_warn "uv" "pip"'
-    alias venv='_ai_warn "uv venv" "venv"'
-    alias poetry='_ai_warn "uv" "poetry"'
-    alias python3='python'
-    alias pip3='pip'
-fi
-
-# ============================================================================
-# INTERACTIVE-ONLY BELOW
-# ============================================================================
-
 # pyclean — remove Python cache and temporary files
 unalias pyclean 2>/dev/null || true
 function pyclean() {
-    find . -depth \( \
-        -type f -name "*.pyc"         -o \
-        -type f -name "*.pyo"         -o \
-        -type f -name ".coverage"     -o \
-        -type d -name "__pycache__"   -o \
-        -type d -name ".pytest_cache" -o \
-        -type d -name ".mypy_cache"   -o \
-        -type d -name ".ruff_cache"   -o \
-        -type d -name ".ipynb_checkpoints" -o \
-        -type d -name "*.egg-info"    -o \
-        -type d -name ".eggs"         -o \
-        -type d -name ".tox"          -o \
-        -type d -name ".nox"          -o \
-        -type d -name "build"         -o \
-        -type d -name "dist"          -o \
-        -type d -name "htmlcov" \
-    \) -delete 2>/dev/null
+    # Skip VCS/env/vendor trees; remove whole cache dirs (find -delete can't remove non-empty dirs)
+    find . \( -name .git -o -name .venv -o -name venv -o -name node_modules \) -prune -o \
+        -type d \( \
+            -name "__pycache__"   -o \
+            -name ".pytest_cache" -o \
+            -name ".mypy_cache"   -o \
+            -name ".ruff_cache"   -o \
+            -name ".ipynb_checkpoints" -o \
+            -name "*.egg-info"    -o \
+            -name ".eggs"         -o \
+            -name ".tox"          -o \
+            -name ".nox"          -o \
+            -name "htmlcov" \
+        \) -prune -exec rm -rf {} + -o \
+        -type f \( -name "*.pyc" -o -name "*.pyo" -o -name ".coverage" \) -exec rm -f {} + 2>/dev/null
+
+    # build/ and dist/ are generic names: only remove them at the root of a Python project
+    if [ -f pyproject.toml ] || [ -f setup.py ] || [ -f setup.cfg ]; then
+        command rm -rf ./build ./dist
+    fi
     echo "🧹 Cleaned Python cache and temp files."
 }
 
@@ -71,20 +43,25 @@ function envup() {
         return 1
     fi
     local count=0
+    local line key val
+    # Plain parameter expansion (no regex captures): BASH_REMATCH doesn't exist in zsh
     while IFS= read -r line || [ -n "$line" ]; do
-        # Skip empty lines and comments
-        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-        # Only process lines matching KEY=VALUE (key must be valid identifier)
-        if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*) ]]; then
-            local key="${BASH_REMATCH[1]}"
-            local val="${BASH_REMATCH[2]}"
-            # Strip surrounding quotes (single or double)
-            if [[ "$val" =~ ^\"(.*)\"$ ]] || [[ "$val" =~ ^\'(.*)\'$ ]]; then
-                val="${BASH_REMATCH[1]}"
-            fi
-            export "$key=$val"
-            ((count++))
+        # Trim leading whitespace; skip empty lines, comments and non-assignments
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ -z "$line" || "$line" == \#* || "$line" != *=* ]] && continue
+        key="${line%%=*}"
+        key="${key%"${key##*[![:space:]]}"}"
+        val="${line#*=}"
+        val="${val#"${val%%[![:space:]]*}"}"
+        # Key must be a valid identifier
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        # Strip surrounding quotes (single or double)
+        if [[ ${#val} -ge 2 && ( ( "$val" == \"*\" ) || ( "$val" == \'*\' ) ) ]]; then
+            val="${val#?}"
+            val="${val%?}"
         fi
+        export "$key=$val"
+        count=$((count + 1))
     done < "$envfile"
     echo "✅ Loaded $count variables from $envfile"
 }

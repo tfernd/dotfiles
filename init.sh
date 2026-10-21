@@ -73,13 +73,24 @@ for module in shell.sh zoxide.sh; do
 done
 
 # 3. Load Feature Modules
-if [ -n "$ZSH_VERSION" ]; then setopt local_options NULL_GLOB; else shopt -s nullglob; fi
+# Enable null-glob just for this loop, then restore the user's setting
+# (local_options has no effect outside a function, so it would leak into the session)
+_DOT_NULLGLOB=false
+if [ -n "$ZSH_VERSION" ]; then
+    [[ -o NULL_GLOB ]] && _DOT_NULLGLOB=true
+    setopt NULL_GLOB
+else
+    shopt -q nullglob && _DOT_NULLGLOB=true
+    shopt -s nullglob
+fi
 
 for file in "$DOTFILES_DIR/modules/"*.sh; do
     source_timed "$file"
 done
 
-[ -z "$ZSH_VERSION" ] && shopt -u nullglob
+if [ "$_DOT_NULLGLOB" = "false" ]; then
+    if [ -n "$ZSH_VERSION" ]; then unsetopt NULL_GLOB; else shopt -u nullglob; fi
+fi
 
 # 4. Platform overrides
 [ "$IS_MAC" = "true" ] && [ -f "$DOTFILES_DIR/platform/macos.sh" ] && source_timed "$DOTFILES_DIR/platform/macos.sh"
@@ -105,6 +116,6 @@ fi
 unset -f _path_add _path_clean source_timed 2>/dev/null
 
 # Clean up temporary environment variables used during initialization
-unset _DOT_START_TIME _DOT_END_TIME _TOTAL_MS 2>/dev/null
+unset _DOT_START_TIME _DOT_END_TIME _TOTAL_MS _DOT_NULLGLOB 2>/dev/null
 unset BASHRC_SRC BASHRC_HASH TOOL_CACHE_KEY 2>/dev/null
 unset ZOXIDE_SRC ZOXIDE_HASH ZOXIDE_CACHE 2>/dev/null

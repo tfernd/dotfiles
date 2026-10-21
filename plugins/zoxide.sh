@@ -34,5 +34,7 @@ if [ "$HAS_ZOXIDE" = "true" ]; then
     source "$ZOXIDE_CACHE"
     
     # Alias cd to z for smart jumping
-    cd() { z "$@" || builtin cd "$@"; }
+    if command -v z >/dev/null 2>&1; then
+        cd() { z "$@"; }
+    fi
 fi

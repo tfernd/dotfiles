@@ -22,7 +22,8 @@ export PATH="/tmp/dotfiles_mock_bin:$PATH"
 # Force tool cache rebuild with mocks in PATH
 rm -f "$HOME/.cache/bashrc_tools"
 
-# 2. Source the Loader
+# 2. Source the Loader (with a non-default umask the cache rebuild must preserve)
+umask 027
 echo "📥 Sourcing init.sh..."
 source "$DOT_DIR/init.sh"
 
@@ -32,13 +33,21 @@ export HOME="/tmp/dotfiles_test_home"
 mkdir -p "$HOME/.cache"
 export PATH="/tmp/dotfiles_mock_bin:$PATH"
 
+# Snapshot state set by init.sh (checked by the regression tests below)
+if [ -n "$ZSH_VERSION" ]; then
+    [[ -o NULL_GLOB ]] && _INIT_NULLGLOB=on || _INIT_NULLGLOB=off
+else
+    shopt -q nullglob && _INIT_NULLGLOB=on || _INIT_NULLGLOB=off
+fi
+_INIT_UMASK=$(umask)
+
 # 3. Validation Tests
 test_passed=0
 test_failed=0
 
 function assert_defined() {
     # Portable check for command, function, or alias
-    if command -v "$1" >/dev/null 2>&1 || [ "$(type -t "$1" 2>/dev/null)" == "function" ] || alias "$1" >/dev/null 2>&1; then
+    if command -v "$1" >/dev/null 2>&1 || [ "$(type -t "$1" 2>/dev/null)" = "function" ] || alias "$1" >/dev/null 2>&1; then
         echo -e "  ✅ [PASSED] Function/Alias defined: $1"
         ((test_passed++))
     else
@@ -148,37 +157,11 @@ assert_defined path
 assert_defined please
 
 
-echo -e "\n🔍 Checking AI Guards..."
-assert_defined node
-assert_defined npm
-assert_defined npx
-assert_defined yarn
-assert_defined pnpm
-assert_defined nodemon
-assert_defined ts-node
-assert_defined tsx
-assert_defined python
-assert_defined pip
-assert_defined venv
-assert_defined poetry
+echo -e "\n🔍 Checking Dev Utilities..."
 assert_defined grep
 assert_defined server
 assert_defined json
 assert_defined calc
-
-# Test one guard to ensure alias logic works (only if UV is simulated as present)
-if [ "$HAS_UV" = "true" ]; then
-    if eval "python" 2>&1 | grep -q "AI: Use 'uv run' instead of 'python'"; then
-        echo -e "  ✅ [PASSED] AI Guard functional check (python)"
-        ((test_passed++))
-    else
-        echo -e "  ❌ [FAILED] AI Guard functional check (python)"
-        ((test_failed++))
-    fi
-else
-    echo -e "  ✅ [PASSED] AI Guard skip check (UV not present)"
-    ((test_passed++))
-fi
 
 echo -e "\n🔍 Checking Meta/Management Functions..."
 assert_defined dotdoctor
@@ -227,10 +210,11 @@ assert_tool telnet
 
 echo -e "\n🧪 Functional Tests: backup"
 function assert_file_glob() {
-    if ls $1 >/dev/null 2>&1; then
+    # Expand the pattern in sh: zsh doesn't glob unquoted parameters
+    if sh -c 'ls $1' _ "$1" >/dev/null 2>&1; then
         echo -e "  ✅ [PASSED] File found (glob): $1"
         ((test_passed++))
-        rm -f $1
+        sh -c 'command rm -f $1' _ "$1"
     else
         echo -e "  ❌ [FAILED] File not found (glob): $1"
         ((test_failed++))
@@ -267,9 +251,16 @@ for ext in zip tar tar.gz tgz tar.bz2 tbz2 tar.xz txz tar.zst 7z rar gz bz2 xz z
     archive="/tmp/test_arc.$ext"
     echo "  Checking extension: .$ext"
     
-    # Test Compress
-    compress "$archive" "/tmp/data" >/dev/null 2>&1
-    if [ -f "$archive" ]; then
+    # Test Compress (rar is extract-only: creating it needs proprietary rar)
+    if [ "$ext" = "rar" ]; then
+        if ! compress "$archive" "/tmp/data" >/dev/null 2>&1; then
+            echo -e "    ✅ [PASSED] compress .rar (rejected, extract-only)"
+            ((test_passed++))
+        else
+            echo -e "    ❌ [FAILED] compress .rar should be rejected"
+            ((test_failed++))
+        fi
+    elif compress "$archive" "/tmp/data" >/dev/null 2>&1 && [ -f "$archive" ]; then
         echo -e "    ✅ [PASSED] compress .$ext"
         ((test_passed++))
         rm -f "$archive"
@@ -294,7 +285,8 @@ rm -f "/tmp/data"
 
 # Test failure mode: Verify that compress returns 1 if the underlying tool is missing
 mv "/tmp/dotfiles_mock_bin/7z" "/tmp/dotfiles_mock_bin/7z_hidden"
-compress "/tmp/fail.7z" "/etc/hostname" >/dev/null 2>&1
+# PATH limited to the mocks so a system 7z (or a cached path) can't satisfy the lookup
+( PATH="/tmp/dotfiles_mock_bin"; hash -r; compress "/tmp/fail.7z" "/etc/hostname" >/dev/null 2>&1 )
 if [ $? -ne 0 ]; then
     echo -e "  ✅ [PASSED] compress error handling (detects missing tools)"
     ((test_passed++))
@@ -358,8 +350,9 @@ fi
 
 # daemonize
 daemonize echo "hello" >/dev/null 2>&1
+wait
 assert_file_glob "daemon_*.log"
-rm -f daemon_*.log
+sh -c 'command rm -f daemon_*.log'
 
 # memhog
 memhog >/dev/null 2>&1
@@ -561,7 +554,13 @@ function __fzf_search_history() { echo "mocked_history_cmd"; }
 
 # f/ff/h/hh (using mocked fzf)
 for cmd in f ff h hh; do
-    result=$(eval "$cmd" 2>/dev/null)
+    if [ -n "$ZSH_VERSION" ] && [[ "$cmd" = f || "$cmd" = ff ]]; then
+        # In zsh f/ff are ZLE widgets: they can only run inside the line editor
+        result="zle widget"
+        zle -l "$cmd" >/dev/null 2>&1
+    else
+        result=$(eval "$cmd" 2>/dev/null)
+    fi
     if [ $? -eq 0 ]; then
         echo -e "  ✅ [PASSED] $cmd (returned: $result)"
         ((test_passed++))
@@ -670,6 +669,70 @@ fi
 
 cd "$DOT_DIR"
 command rm -rf "$GIT_ROOT" >/dev/null 2>&1
+
+echo -e "\n🧪 Regression Tests (${ZSH_VERSION:+zsh}${BASH_VERSION:+bash})"
+
+function assert_eq() {
+    if [ "$2" = "$3" ]; then
+        echo -e "  ✅ [PASSED] $1"
+        ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] $1 (expected '$3', got '$2')"
+        ((test_failed++))
+    fi
+}
+
+# init.sh must not leave null-glob enabled in the user's session
+assert_eq "init.sh restores null-glob setting" "$_INIT_NULLGLOB" "off"
+
+# Tool cache rebuild must keep the user's umask
+# Compare numerically: bash prints 0027, zsh prints 027
+assert_eq "tool cache preserves umask" "$(( 8#$_INIT_UMASK ))" "$(( 8#027 ))"
+
+# envup: quotes, spacing, comments and invalid keys
+command cat > "/tmp/.test_env2" <<'ENVEOF'
+# comment
+  SPACED_KEY = spaced value
+DQ_VAR="double quoted"
+SQ_VAR='single quoted'
+EQ_VAR=a=b
+9BAD=nope
+ENVEOF
+unset SPACED_KEY DQ_VAR SQ_VAR EQ_VAR
+envup "/tmp/.test_env2" >/dev/null 2>&1
+assert_eq "envup trims key/value whitespace" "$SPACED_KEY" "spaced value"
+assert_eq "envup strips double quotes" "$DQ_VAR" "double quoted"
+assert_eq "envup strips single quotes" "$SQ_VAR" "single quoted"
+assert_eq "envup keeps '=' in values" "$EQ_VAR" "a=b"
+assert_eq "envup reports count (skips invalid keys)" "$(envup /tmp/.test_env2 2>&1)" "✅ Loaded 4 variables from /tmp/.test_env2"
+command rm -f "/tmp/.test_env2"
+
+# pyclean: removes non-empty cache dirs, build/dist only in Python projects, never .venv
+PYC_ROOT="/tmp/test_pyclean2"
+command rm -rf "$PYC_ROOT"
+mkdir -p "$PYC_ROOT/proj/build/lib" "$PYC_ROOT/proj/pkg.egg-info" "$PYC_ROOT/proj/.venv/__pycache__" \
+         "$PYC_ROOT/other/build"
+touch "$PYC_ROOT/proj/pyproject.toml" "$PYC_ROOT/proj/build/lib/x.py" "$PYC_ROOT/proj/pkg.egg-info/PKG-INFO" \
+      "$PYC_ROOT/proj/.venv/__pycache__/a.pyc" "$PYC_ROOT/other/build/keep.txt"
+( cd "$PYC_ROOT/proj" && pyclean >/dev/null 2>&1 )
+( cd "$PYC_ROOT/other" && pyclean >/dev/null 2>&1 )
+assert_eq "pyclean removes non-empty build/ in Python project" "$([ -d "$PYC_ROOT/proj/build" ] && echo kept || echo removed)" "removed"
+assert_eq "pyclean removes non-empty *.egg-info" "$([ -d "$PYC_ROOT/proj/pkg.egg-info" ] && echo kept || echo removed)" "removed"
+assert_eq "pyclean leaves .venv alone" "$([ -f "$PYC_ROOT/proj/.venv/__pycache__/a.pyc" ] && echo kept || echo removed)" "kept"
+assert_eq "pyclean keeps build/ outside Python projects" "$([ -f "$PYC_ROOT/other/build/keep.txt" ] && echo kept || echo removed)" "kept"
+command rm -rf "$PYC_ROOT"
+
+# Git helpers must not report success when git fails (no remote → push fails)
+GIT_FAIL_ROOT="/tmp/test_git_fail"
+command rm -rf "$GIT_FAIL_ROOT"
+mkdir -p "$GIT_FAIL_ROOT" && cd "$GIT_FAIL_ROOT"
+git init -q -b main >/dev/null 2>&1
+git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init >/dev/null 2>&1
+gpf_out=$(echo y | gpf 2>&1); gpf_rc=$?
+assert_eq "gpf returns failure when push fails" "$gpf_rc" "1"
+assert_eq "gpf does not claim success" "$(echo "$gpf_out" | grep -c 'Force pushed')" "0"
+cd "$DOT_DIR"
+command rm -rf "$GIT_FAIL_ROOT"
 
 echo -e "\n📊 Test Results: $test_passed Passed, $test_failed Failed."
 

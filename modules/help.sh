@@ -73,7 +73,6 @@ function myhelp() {
     echo -e "\n\033[1;33m🐍 DEVELOPMENT & DATA\033[0m"
     [ "$HAS_JQ" = "true" ] && print_cmd "jq"      "Command-line JSON processor"
     [ "$HAS_YQ" = "true" ] && print_cmd "yq"      "Command-line YAML processor"
-    print_cmd "python, pip" "Strictly mapped to UV (AI Guard active if UV installed)"
     print_cmd "envup"   "Load variables from a .env file"
     print_cmd "pyclean" "Delete all __pycache__ and compiled files"
     print_cmd "server"  "Start a simple Python web server (default :8000)"
