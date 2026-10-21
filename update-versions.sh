@@ -38,7 +38,6 @@ declare -A REPOS=(
     ["eza"]="eza-community/eza"
     ["gh"]="cli/cli"
     ["git"]="git/git"
-    ["ripgrep"]="BurntSushi/ripgrep"
     ["starship"]="starship/starship"
     ["uv"]="astral-sh/uv"
     ["xh"]="ducaale/xh"
@@ -96,7 +95,7 @@ _fetch_git_tags() {
     ' 2>/dev/null
 }
 
-for tool in atuin bat bun delta eza gh git ripgrep starship uv xh yq zellij zoxide firacode-nerd; do
+for tool in atuin bat bun delta eza gh git starship uv xh yq zellij zoxide firacode-nerd; do
     repo="${REPOS[$tool]:-}"
     [[ -z "$repo" ]] && continue
 

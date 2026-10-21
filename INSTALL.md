@@ -67,7 +67,7 @@ If you already cloned elsewhere, run `bash install.sh` from that tree; it copies
 5. **FiraCode Nerd Font**
 6. **Pinned tools** from `versions.toml` (skip any release **younger than 14 days**, SHA256 checked)
    - **All platforms:** `git` (built from the pinned kernel.org tarball into `~/.local`), `uv`, `gh`
-   - **Linux/WSL also:** starship, ripgrep, zoxide, delta, eza, bat, xh, yq, bun, atuin, zellij
+   - **Linux/WSL also:** starship, zoxide, delta, eza, bat, xh, yq, bun, atuin, zellij
    - macOS gets the rest of those via Homebrew in step 2
 7. Configures **delta** as git pager; `merge.conflictstyle` is `zdiff3` if git ≥ 2.35, else `diff3`
 8. Bootstraps `~/.dotfiles` and appends the loader to `~/.zshrc`

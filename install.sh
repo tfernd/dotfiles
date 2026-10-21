@@ -66,7 +66,7 @@ if [[ "$PLATFORM" == "macos" ]]; then
     echo "📦 Installing tools via Homebrew..."
     brew install \
         zsh curl wget coreutils \
-        starship zoxide atuin zellij bat eza ripgrep trash-cli yq xh fzf \
+        starship zoxide atuin zellij bat eza trash-cli yq xh fzf \
         git git-delta jq bun \
         p7zip zip unzip xz zstd unar \
         zsh-autosuggestions zsh-syntax-highlighting
@@ -450,13 +450,6 @@ if [[ "$PLATFORM" != "macos" ]]; then
         "https://github.com/starship/starship/releases/download/v${v}/starship-${ARCH}-unknown-linux-musl.tar.gz" \
         "https://github.com/starship/starship/releases/download/v${v}/starship-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
         "tar" "starship"
-
-    # ripgrep
-    v=$(_ver ripgrep); r=$(_released ripgrep)
-    _ensure "rg" "rg" "$v" "$r" \
-        "https://github.com/BurntSushi/ripgrep/releases/download/${v}/ripgrep-${v}-${ARCH}-unknown-linux-musl.tar.gz" \
-        "https://github.com/BurntSushi/ripgrep/releases/download/${v}/ripgrep-${v}-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
-        "tar" "ripgrep-${v}-${ARCH}-unknown-linux-musl/rg"
 
     # zoxide
     v=$(_ver zoxide); r=$(_released zoxide)

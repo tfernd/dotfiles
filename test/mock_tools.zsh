@@ -6,7 +6,7 @@ MOCK_BIN_DIR="/tmp/dotfiles_mock_bin"
 mkdir -p "$MOCK_BIN_DIR"
 
 TOOLS=(
-    zoxide starship bat eza rg gh jq xh delta yq uv bun atuin zellij fzf
+    zoxide starship bat eza gh jq xh delta yq uv bun atuin zellij fzf
     7z zip unzip tar rar unrar curl ip ipconfig lsof ss fuser xclip wl-copy xsel
     pbcopy ps brew trash-put trash-list trash-restore
     trash-empty trash bunzip2 uncompress gunzip bzip2 gzip compress xz unxz zstd unzstd

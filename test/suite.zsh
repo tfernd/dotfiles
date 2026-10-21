@@ -107,19 +107,12 @@ assert_defined port
 assert_defined kill-port
 assert_defined sudok
 assert_defined http
-assert_defined copy
-assert_defined cpwd
-assert_defined df
-assert_defined free
 assert_defined reload
 assert_defined x
 assert_defined path
-assert_defined please
 
 echo -e "\n🔍 Checking Autoloaded Functions..."
 assert_defined server
-assert_defined envup
-assert_defined pyclean
 assert_defined git-setup
 assert_defined ssh-setup
 assert_defined c
@@ -222,40 +215,6 @@ assert_eq "rm --force on a missing file succeeds" "$?" "0"
 rm -fR missing-dir >/dev/null 2>&1
 assert_eq "rm -fR (combined flags) on a missing path succeeds" "$?" "0"
 cd "$DOT_DIR"; command rm -rf "$TRASH_ROOT"
-
-echo -e "\n🧪 Functional: envup"
-ENV_FILE="/tmp/test_envup.env"
-print -r -- '# comment
-  SPACED_KEY = spaced value
-DQ_VAR="double quoted"
-SQ_VAR='"'"'single quoted'"'"'
-EQ_VAR=a=b
-9BAD=nope' > "$ENV_FILE"
-unset SPACED_KEY DQ_VAR SQ_VAR EQ_VAR
-envup_out=$(envup "$ENV_FILE")
-envup "$ENV_FILE" >/dev/null
-assert_eq "envup trims whitespace" "$SPACED_KEY" "spaced value"
-assert_eq "envup strips double quotes" "$DQ_VAR" "double quoted"
-assert_eq "envup strips single quotes" "$SQ_VAR" "single quoted"
-assert_eq "envup keeps '=' in values" "$EQ_VAR" "a=b"
-assert_eq "envup skips invalid keys" "$envup_out" "✅ Loaded 4 variables from $ENV_FILE"
-command rm -f "$ENV_FILE"
-
-echo -e "\n🧪 Functional: pyclean"
-PYC_ROOT="/tmp/test_pyclean"
-command rm -rf "$PYC_ROOT"
-mkdir -p "$PYC_ROOT/proj/build/lib" "$PYC_ROOT/proj/pkg.egg-info" "$PYC_ROOT/proj/src/__pycache__" \
-         "$PYC_ROOT/proj/.venv/__pycache__" "$PYC_ROOT/other/build"
-touch "$PYC_ROOT/proj/pyproject.toml" "$PYC_ROOT/proj/build/lib/x.py" "$PYC_ROOT/proj/pkg.egg-info/PKG-INFO" \
-      "$PYC_ROOT/proj/src/__pycache__/m.pyc" "$PYC_ROOT/proj/.venv/__pycache__/a.pyc" "$PYC_ROOT/other/build/keep.txt"
-( cd "$PYC_ROOT/proj" && pyclean >/dev/null 2>&1 )
-( cd "$PYC_ROOT/other" && pyclean >/dev/null 2>&1 )
-assert_eq "pyclean removes __pycache__" "$([[ -d $PYC_ROOT/proj/src/__pycache__ ]] && echo kept || echo removed)" "removed"
-assert_eq "pyclean removes non-empty build/ in a Python project" "$([[ -d $PYC_ROOT/proj/build ]] && echo kept || echo removed)" "removed"
-assert_eq "pyclean removes non-empty *.egg-info" "$([[ -d $PYC_ROOT/proj/pkg.egg-info ]] && echo kept || echo removed)" "removed"
-assert_eq "pyclean leaves .venv alone" "$([[ -f $PYC_ROOT/proj/.venv/__pycache__/a.pyc ]] && echo kept || echo removed)" "kept"
-assert_eq "pyclean keeps build/ outside Python projects" "$([[ -f $PYC_ROOT/other/build/keep.txt ]] && echo kept || echo removed)" "kept"
-command rm -rf "$PYC_ROOT"
 
 echo -e "\n📊 Results: $test_passed Passed, $test_failed Failed."
 if (( test_failed > 0 )); then

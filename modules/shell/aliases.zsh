@@ -7,17 +7,10 @@ alias x='exit'
 alias reload='exec zsh --login'
 alias doctor='zsh "$DOTFILES_DIR/doctor.zsh"'
 alias path='echo "$PATH" | tr ":" "\n"'
-alias df='df -h'
-alias please='sudo $(fc -ln -1)'
 alias grep='grep --color=auto'
 
 # Drop cached sudo credentials immediately
 alias sudok='sudo -k && echo "🔒 Sudo credentials revoked."'
-
-# free — Memory usage
-if [[ "$IS_LINUX" == "true" ]]; then
-    alias free='free -m'
-fi
 
 # --- SSH shortcuts ---
 alias ssh-login='eval "$(ssh-agent -s)" &>/dev/null && ssh-add ~/.ssh/id_ed25519 && echo "✅ SSH agent ready (key loaded)"'

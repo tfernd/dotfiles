@@ -57,7 +57,7 @@ dotfiles/
 │   ├── dev/            # http (xh), json
 │   ├── files/          # listing (ls/ll/cat), navigation (.. ~ -), trash (rm/del/rl/rt)
 │   ├── git/            # git aliases, gh aliases
-│   ├── shell/          # general aliases, clipboard (copy/cpwd)
+│   ├── shell/          # general aliases (c, x, reload, path, sudok, ssh-login/ssh-test)
 │   └── system/         # network (myip, localip, port, kill-port)
 ├── platform/           # Per-platform overrides: macos.zsh, debian.zsh, wsl.zsh
 ├── functions/          # Autoloaded functions: one file per function, file name = function name

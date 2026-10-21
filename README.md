@@ -34,9 +34,8 @@ ssh-setup    # Generate SSH key + configure agent
 - `cat` (bat with syntax highlighting)
 - `extract`, `compress`
 
-### Search & History
+### History
 
-- `rg` — ripgrep text search
 - `atuin` — rich shell history with SQLite search (`Ctrl+R` / `Up`)
 
 ### Git & GitHub
@@ -49,7 +48,7 @@ ssh-setup    # Generate SSH key + configure agent
 
 - `zj` (zellij), `zja` (attach main), `zjs` (session picker), `zjl` (list), `zjk` (delete session), `zjd` (delete all)
 - `myip`, `localip`, `port`, `kill-port`
-- `copy`, `cpwd`, `please`, `sudok` (forget sudo credentials)
+- `sudok` (forget sudo credentials)
 - `c` (clear), `x` (exit), `reload`, `path`, `ssh-login`, `ssh-test`
 - `rm`/`del` (safe trash, also in AI/agent shells), `rl` (list trash), `rt` (restore), `empty-trash` (with preview)
 
@@ -57,8 +56,6 @@ ssh-setup    # Generate SSH key + configure agent
 
 - `http` (xh), `json` (jq), `jq`, `yq`
 - `server` — quick HTTP server
-- `envup [file]` — load a `.env` file into the current shell (parsed, never sourced)
-- `pyclean` — remove Python caches; `build/`/`dist/` only at a Python project root
 
 ### Setup & Maintenance
 
@@ -86,7 +83,7 @@ dotfiles/
 │   ├── git/              # Git aliases + GitHub CLI
 │   ├── files/            # ls, navigation, trash
 │   ├── dev/              # HTTP, JSON
-│   ├── shell/            # Aliases, clipboard
+│   ├── shell/            # General aliases
 │   └── system/           # Network
 ├── functions/            # Autoloaded (lazy) — zero startup cost
 ├── platform/             # Conditional: macos, debian, wsl
