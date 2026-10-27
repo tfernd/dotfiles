@@ -286,3 +286,36 @@ Conventional commits, matching the history: `feat(scope): …`, `fix: …`,
 `refactor(scope): …`, `docs: …`, `test: …`. Scopes are the area names
 (`install`, `git`, `files`, `zellij`, `history`, …). One logical change per commit;
 run `zsh -f test/suite.zsh` before committing.
+
+## 11. Scorecards and learning
+
+Every agent ends its reply with a scorecard, after its report. A session that worked alone ends with one too.
+
+```markdown
+## Scorecard: <role>, <task in six words>
+
+| Score | Value | 5 means |
+| --- | --- | --- |
+| Brief | N/5 | nothing had to be guessed |
+| Ease | N/5 | nothing was looked up twice |
+| Job | N/5 | every question answered with a marked claim |
+
+**Lessons learned**
+- one fact the next agent needs, re-checkable: a path:line, a command, a version
+
+**Troubles**
+- what cost time or went wrong, and where it came from: the brief, a tool, a rule, a file
+
+**Wishlist for the next assignment**
+- the change that would have saved the trouble: a brief field, a tool, a rule, a file; "none" when empty
+```
+
+Each scorecard changes something. The main session does this after every one; a session that worked alone does it for itself:
+
+- **Log it:** one numbered entry in `.claude/agents/feedback.md`: the three scores, the wishlist items it takes on, and what changed because of them.
+- **Route it:** each lesson and trouble goes to one home: a trap to section 9, a rule to the section it belongs to, a missing fact to the next brief, a broken tool to the tool.
+- **Apply the open wishlist:** before the next brief for that role, read the open items in the log and fold in the ones that match.
+- **Change the role, not only the brief,** when a score is 3 or less or the same trouble comes back.
+- **Report it:** the changes go in the wrap-up, by entry number.
+
+An agent proposes and the main session applies. No agent edits this file, a role file or the log itself.
