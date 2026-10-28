@@ -4,6 +4,8 @@
 # Personal files
 todo.txt
 notes.txt
+# Local Claude settings: holds machine paths
+.claude/settings.local.json
 
 # OS junk
 .DS_Store

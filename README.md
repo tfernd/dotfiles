@@ -5,17 +5,19 @@ A fast, modular, zsh-only dotfiles framework with autoloaded functions and suppl
 ## Quick Start
 
 ```bash
-git clone https://github.com/tfernd/dotfiles.git ~/.dotfiles
-bash ~/.dotfiles/install.sh
+git clone <repo-url> ~/path/to/dotfiles
+bash ~/path/to/dotfiles/install.sh
 ```
+
+The clone is the install. Nothing is copied: `~/.zshrc` loads `core/init.zsh` from wherever you cloned, so edits take effect in a new shell (or `exec zsh`) with no re-install.
 
 The installer configures everything from a bare machine:
 
 1. System packages (zsh, curl, archive tools, etc.)
 2. Sets zsh as default shell + installs Oh My Zsh (pinned commit)
 3. Installs FiraCode Nerd Font
-4. Installs pinned CLI tools: **git, uv, gh** on Debian / WSL / macOS, plus the rest on Linux (SHA256 verified, **14-day quarantine**)
-5. Bootstraps dotfiles (copies to `~/.dotfiles`, adds the loader to `~/.zshrc`)
+4. Installs git from the system (apt on Debian / WSL, Homebrew on macOS) and the pinned CLI tools: **uv, gh** on Debian / WSL / macOS, plus the rest on Linux (SHA256 verified, **`.freshness` quarantine**)
+5. Wires dotfiles in place: appends the loader to `~/.zshrc`, only if no `core/init.zsh` line is there yet
 6. Drops you into zsh
 
 ## Post-Install
@@ -25,12 +27,14 @@ git-setup    # Configure git identity (name + email)
 ssh-setup    # Generate SSH key + configure agent
 ```
 
+Changed a file in the repo? It loads in the next shell (or `exec zsh`). Tool pins live in `versions.toml`; `./update-versions.sh --apply` bumps them.
+
 ## Key Commands
 
 ### Files & Navigation
 
 - `cd` (zoxide smart jump), `..`, `~`, `-`
-- `ls`/`ll`/`lt` (eza with icons), `lsh`/`llh`/`lth` (hidden files)
+- `ls` is always the plain, real `ls`; the colourful listing is `l` (what `ls` used to be); the eza views are `ll`/`lt` (long, tree; with icons), `lsh`/`llh`/`lth` (same, hidden files)
 - `cat` (bat with syntax highlighting)
 - `extract`, `compress`
 
@@ -63,19 +67,23 @@ ssh-setup    # Generate SSH key + configure agent
 - `ssh-setup` — SSH key wizard
 - `refresh` — rebuild cache + reload (run after installing a new tool)
 - `doctor` — health check of tools, configs and caches
+- `dotdoctor check` — installed vs pinned versions, and known advisories from `versions.toml [fixes]` (`--latest` also asks GitHub for releases past the quarantine; `--advisories` asks OSV.dev about the tools in `versions.toml [osv]`, the only network call and it sends only the package name and version)
+- `dotdoctor scan` — local indicators of compromise (start-up items, listeners, connections to addresses outside your network, processes, shell hooks, setuid). `--facts`, `--save` and `--diff` make it reproducible: a saved baseline in `~/.local/state/dotdoctor` shows what changed. `--save` keeps the previous baseline as `baseline.tsv.prev`. `--deep` verifies package files on Linux
+- `dotdoctor update` — what can be updated or removed (apt, snap, Flatpak, firmware via fwupd, uv, rustup, bun and npm globals, Homebrew, old kernels). It prints the commands in three groups: *No root needed*, *Need your password* (sudo) and *Deletes files* (old kernels, Flatpak unused runtimes). `--apply` asks before each step: a letter, then Enter: y runs it, n skips it, q stops, and `a` runs the rest without asking, except steps that delete files. It also offers to bump the pins (`update-versions.sh --apply`) and to run `install.sh --tools-only` (the pinned tools only: no apt, no sudo) when a tool is behind its pin. Each step shows one line; its output goes to `~/.cache/dotdoctor/update.log`, and a failed step shows its last lines. In a terminal, `dotdoctor check` offers it when it finds something (`y` asks before each step, `a` runs them all), then checks again and shows only what still needs attention
+- `dotdoctor clean` — dangling user systemd units, broken git URL rewrites, Brotli-affected Python packages, copies of pinned tools that apt or Homebrew installed next to the pinned one, and old `name.backup-*` copies that self-updates left behind. Report only; `--apply` moves what you confirm into `~/.local/state/dotdoctor/removed/` instead of deleting it
 - `help`, `help git` — cheatsheet and prompt-symbol guide
-- `./update-versions.sh` — check & update pinned tool versions (14-day quarantine rule)
+- `./update-versions.sh` — check & update pinned tool versions (`.freshness` quarantine rule)
 - `./verify-status.sh` — rebuild `.verify-status-worktree/` and print Starship git pills (merge/rebase/tag/…)
 
 ## Architecture
 
 ```
 dotfiles/
-├── install.sh            # Bare-metal bootstrap (run once)
+├── install.sh            # Bare-metal bootstrap (re-runnable; wires the repo in place)
 ├── doctor.zsh            # Health check (run via `doctor`)
-├── update-versions.sh    # Bump pins in versions.toml (14-day quarantine)
+├── update-versions.sh    # Bump pins in versions.toml (`.freshness` quarantine)
 ├── verify-status.sh      # Visual Starship git-state verifier (creates .verify-status-worktree/)
-├── versions.toml         # Pinned tool versions (14-day quarantine)
+├── versions.toml         # Pinned tool versions (`.freshness` quarantine)
 ├── AGENTS.md             # Guide for AI agents / contributors editing this repo
 ├── config/               # Starship, Atuin, Zellij
 ├── core/                 # Sourced every startup (fast, minimal)
@@ -86,10 +94,13 @@ dotfiles/
 │   ├── shell/            # General aliases
 │   └── system/           # Network
 ├── functions/            # Autoloaded (lazy) — zero startup cost
+│   └── dotdoctor*        # `dotdoctor` + helpers: check, scan, update, clean, osv
 ├── platform/             # Conditional: macos, debian, wsl
 ├── plugins/              # OMZ + Starship, zoxide, atuin, zellij (cached init)
 └── test/                 # Test suite + mocks
 ```
+
+The repo loads in place: `~/.zshrc` sources `<repo>/core/init.zsh`, so there is no copy and no sync step.
 
 ## Testing
 
@@ -111,7 +122,7 @@ when the shell is non-interactive, `TERM=dumb`, inside Claude Code (`CLAUDECODE`
 or `DOTFILES_AGENT=1` is set. Then:
 
 - no Oh My Zsh, Starship or atuin hooks
-- `ls` is the real `ls` (eza aliases use `--color=auto --icons=auto` everywhere)
+- `ls` is the plain, real `ls` in every shell (never aliased); the eza views `l`, `ll`, `lt`, `lsh`, `llh`, `lth` stay available with `--color=auto --icons=auto`
 - `cd` is the builtin (no zoxide fuzzy jumps on a mistyped path)
 - `rm` **still goes to the trash**
 

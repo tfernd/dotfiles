@@ -16,7 +16,7 @@ Windows hosts run the dotfiles **inside WSL**, not in PowerShell.
 - `sudo` (Linux/WSL) or admin (macOS Homebrew / Xcode CLT)
 - Enough disk for Homebrew or APT plus pinned binaries under `~/.local`
 
-You only need a **bootstrap git** to clone this repo. The installer then installs the **pinned** `git` / `uv` / `gh` from `versions.toml` (14-day quarantine). Distro/Xcode git is not the final git.
+You only need a **bootstrap git** to clone this repo. The installer then installs git from the system (apt on Debian / WSL, Homebrew on macOS) and the **pinned** `uv` / `gh` from `versions.toml` (`.freshness` quarantine).
 
 ---
 
@@ -40,19 +40,19 @@ Continue the Linux steps **inside that Debian WSL**.
 
 ```bash
 sudo apt update && sudo apt install -y git curl
-git clone https://github.com/tfernd/dotfiles.git ~/.dotfiles
-bash ~/.dotfiles/install.sh
+git clone <repo-url> ~/path/to/dotfiles
+bash ~/path/to/dotfiles/install.sh
 ```
 
 **macOS** (Xcode CLT provides bootstrap git):
 
 ```bash
 xcode-select --install   # if git/curl are missing
-git clone https://github.com/tfernd/dotfiles.git ~/.dotfiles
-bash ~/.dotfiles/install.sh
+git clone <repo-url> ~/path/to/dotfiles
+bash ~/path/to/dotfiles/install.sh
 ```
 
-If you already cloned elsewhere, run `bash install.sh` from that tree; it copies into `~/.dotfiles` and writes `~/.zshrc`.
+The clone stays where it is and is used in place. If you already cloned elsewhere, run `bash install.sh` from that tree. It copies nothing; it only appends the loader to `~/.zshrc`, when needed.
 
 ---
 
@@ -61,19 +61,19 @@ If you already cloned elsewhere, run `bash install.sh` from that tree; it copies
 1. Detects platform: `macos` | `debian` | `wsl`
 2. **System packages**
    - macOS: Xcode CLT if needed, Homebrew, then brew for zsh and most CLI (not git/uv/gh)
-   - Debian/WSL: APT (`zsh`, bootstrap `git`, build deps, archive tools, `wslu` on WSL)
+   - Debian/WSL: APT (`zsh`, `git`, `build-essential`, archive tools, `wslu` on WSL)
 3. Sets **zsh** as the default shell
 4. **Oh My Zsh** at a pinned commit + autosuggestions / syntax-highlighting
 5. **FiraCode Nerd Font**
-6. **Pinned tools** from `versions.toml` (skip any release **younger than 14 days**, SHA256 checked)
-   - **All platforms:** `git` (built from the pinned kernel.org tarball into `~/.local`), `uv`, `gh`
-   - **Linux/WSL also:** starship, zoxide, delta, eza, bat, xh, yq, bun, atuin, zellij
+6. **Pinned tools** from `versions.toml` (skip any release **younger than the number of days in `.freshness`**, SHA256 checked)
+   - **All platforms:** `uv`, `gh` (pinned). `git` is not pinned: step 2 installs it (apt on Debian / WSL, Homebrew on macOS)
+   - **Linux/WSL also:** starship, zoxide, delta, eza, bat, xh, yq, bun, atuin, zellij, terraform, terraform-ls, ripgrep (`rg`), fd, fzf, just, lazygit, bottom (`btm`), yazi
    - macOS gets the rest of those via Homebrew in step 2
 7. Configures **delta** as git pager; `merge.conflictstyle` is `zdiff3` if git ≥ 2.35, else `diff3`
-8. Bootstraps `~/.dotfiles` and appends the loader to `~/.zshrc`
+8. Wires the repo in place (no copy): appends `[ -f "<repo>/core/init.zsh" ] && source "<repo>/core/init.zsh"` to `~/.zshrc`, only when no `core/init.zsh` line exists yet
 9. Starts zsh
 
-Pins live in `versions.toml`. `~/.local/bin` is on PATH (see `core/paths.zsh`).
+Pins live in `versions.toml`. `~/.local/bin` is on PATH (see `core/paths.zsh`). The copy in `~/.local/bin` is the one that counts: a newer copy from apt or Homebrew does not keep the pin out, and `dotdoctor clean` lists such copies for removal. A tool with no row in `versions.toml` yet is skipped until `bash update-versions.sh --apply` adds it.
 
 ---
 
@@ -87,7 +87,7 @@ ssh-setup    # SSH key + agent
 Optional later:
 
 ```bash
-./update-versions.sh          # list pins that have a safe (≥ 14 day) upstream
+./update-versions.sh          # list pins that have a safe (past the `.freshness` window) upstream
 ./update-versions.sh --apply  # write those pins into versions.toml
 bash install.sh               # install the new pins
 
@@ -98,15 +98,31 @@ refresh                       # rebuild tool caches + reload zsh
 
 ---
 
+## Updating
+
+The clone is the install, so an update is a pull:
+
+```bash
+cd ~/path/to/dotfiles && git pull
+```
+
+- Edits load in a new shell, or after `exec zsh`. No re-install is needed.
+- New pins in `versions.toml`: run `bash install.sh` (add `--force` to reinstall tools already at their pin). `bash install.sh --tools-only` installs only the pinned tools (no apt, no sudo); `dotdoctor update --apply` uses it.
+- Older installs put their own git build in `~/.local`, which hides the system git. While `~/.local/bin/git` exists, `install.sh` stops with a ❌. Remove `~/.local/bin/git`, `~/.local/libexec/git-core` and `~/.local/share/git-core` (if they exist), then run `bash install.sh` again.
+- Moved the clone? `install.sh` does not rewrite the loader in `~/.zshrc`; it only checks that a `core/init.zsh` line exists. Edit that line to the new path.
+- Older installs had a copy in `~/.dotfiles`; it is no longer used and can be removed. If `~/.zshrc` still sources that copy, point its loader line at the clone (or delete that line and re-run `bash install.sh`).
+
+---
+
 ## git, uv, gh (all three OSes)
 
 | Tool | Pin file | Install |
 |------|----------|---------|
-| **git** | `versions.toml` → `git` | Source tarball → `~/.local` (not apt/brew latest) |
+| **git** | not pinned | apt (Debian / WSL), Homebrew (macOS) |
 | **uv** | `versions.toml` → `uv` | GitHub musl/darwin tarball + SHA256 |
 | **gh** | `versions.toml` → `gh` | GitHub release + checksums (not apt/brew latest) |
 
-`update-versions.sh` checks **git**, **uv**, **gh**, and the other pinned tools. It **never** installs; it only updates `versions.toml` for releases **≥ 14 days old**. Then re-run `install.sh`.
+`update-versions.sh` checks **uv**, **gh**, and the other pinned tools. It **never** installs; it only updates `versions.toml` for releases **past the `.freshness` window**. Then re-run `install.sh`.
 
 ---
 
@@ -114,4 +130,4 @@ refresh                       # rebuild tool caches + reload zsh
 
 - **Arch:** `x86_64` or `aarch64` / `arm64`
 - **Linux:** Debian-family APT
-- **Git merge style:** pinned git is 2.55.x so `zdiff3` is used once that binary is on PATH
+- **Git merge style:** `zdiff3` only when git is ≥ 2.35; an older git gets `diff3` (see item 7 above)
