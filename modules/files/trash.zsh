@@ -5,14 +5,7 @@
 # Loaded in every shell, AI/agent shells included: nothing is deleted for good
 # through `rm`, it goes to the trash. (`command rm` and scripts still bypass it.)
 if [[ "$HAS_TRASH" == "true" ]]; then
-    function _trash_items() {
-        if [[ "$HAS_TRASH_PUT" == "true" ]]; then
-            command trash-put -- "$@"
-        else
-            command trash "$@"
-        fi
-    }
-
+    # No helper function here: an agent shell can lack one, and rm then fails with "command not found".
     function rm() {
         local args=() arg
         local force=false opts_done=false
@@ -35,11 +28,17 @@ if [[ "$HAS_TRASH" == "true" ]]; then
             [[ -e "$item" || -L "$item" ]] && existing+=("$item")
         done
 
-        if (( ${#existing[@]} > 0 )); then
-            _trash_items "${existing[@]}"
-        elif [[ "$force" == "false" ]] && (( ${#args[@]} > 0 )); then
-            # Nothing exists: let the trash tool print its "not found" error
-            _trash_items "${args[@]}"
+        local targets=("${existing[@]}")
+        # Nothing exists: let the trash tool print its "not found" error
+        if (( ${#targets[@]} == 0 )) && [[ "$force" == "false" ]]; then
+            targets=("${args[@]}")
+        fi
+        (( ${#targets[@]} > 0 )) || return 0
+
+        if [[ "$HAS_TRASH_PUT" == "true" ]]; then
+            command trash-put -- "${targets[@]}"
+        else
+            command trash "${targets[@]}"
         fi
     }
     alias del='rm'
