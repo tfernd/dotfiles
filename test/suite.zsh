@@ -956,9 +956,12 @@ assert_eq "install.sh --tools-only skips system setup, doctor and the new shell"
 assert_eq "install.sh --tools-only calls no sudo, apt or curl" "$(command cat -- "$dd_to/calls" 2>/dev/null)" ""
 
 # A newer gh outside ~/.local/bin (apt's) does not stop the pin: the installer goes for the pinned one.
-command rm -f "$dd_to/home/.local/bin/gh"
+command rm -f "$dd_to/home/.local/bin/gh" "$dd_to/home/.local/bin/zoxide"
 print -rl -- '#!/bin/sh' "echo 'gh version 99.0.0'" > "$dd_to/bin/gh"; chmod +x "$dd_to/bin/gh"
-dd_to_out=$(env -i PATH="$dd_to/bin:/usr/bin:/bin" HOME="$dd_to/home" "$(whence -p bash)" "$dd_to/repo/install.sh" --tools-only </dev/null 2>&1)
+dd_to_out=$(env -i PATH="$dd_to/bin:/usr/bin:/bin" HOME="$dd_to/home" "$(whence -p bash)" "$dd_to/repo/install.sh" --tools-only </dev/null 2>&1); dd_to_rc=$?
+assert_contains "install.sh: a failed tool does not stop the next one" "$dd_to_out" "Download failed for zoxide"
+assert_contains "install.sh: the failed tools are listed at the end" "$dd_to_out" "Not installed: gh zoxide"
+assert_eq "install.sh: a failed tool makes the run exit 1" "$dd_to_rc" "1"
 assert_contains "install.sh: a newer apt gh does not keep the pin out of ~/.local/bin" "$dd_to_out" "Download failed for gh"
 assert_eq "install.sh: no 'newer than the pin' keep for a copy outside ~/.local/bin" \
     "$([[ "$dd_to_out" == *"gh 99.0.0 is newer than the pin"* ]] && echo kept || echo installs)" "installs"
@@ -999,6 +1002,11 @@ assert_eq "update-versions: the new row is in [tools]" \
     "$(awk '/^\[/{s = ($0 == "[tools]")} s && /^rg =/' "$dd_uv/repo/versions.toml")" 'rg = { version = "1.2.3", released = "2020-02-01" }'
 assert_eq "update-versions: nothing is added to [fixes] and the font row is not duplicated" \
     "$(command grep -c '^firacode-nerd\|^rg =' "$dd_uv/repo/versions.toml")" "2"
+# A release published on the cutoff day counts, whatever the hour: the installer and dotdoctor compare dates too.
+dd_uv_cut=$(date -d "-7 days" +%F)
+print -rl -- '#!/bin/sh' "echo \"[{\\\"tag_name\\\":\\\"v9.9.9\\\",\\\"published_at\\\":\\\"${dd_uv_cut}T23:59:59Z\\\",\\\"draft\\\":false,\\\"prerelease\\\":false}]\"" > "$dd_uv/bin/curl"
+dd_uv_out=$(env -i PATH="$dd_uv/bin:/usr/bin:/bin" HOME="$dd_uv/home" "$(whence -p bash)" "$dd_uv/repo/update-versions.sh" --apply 2>&1)
+assert_contains "update-versions: a release from the cutoff day counts, whatever the hour" "$dd_uv_out" "Updated bat -> v9.9.9"
 command rm -rf "$dd_uv"
 
 # --- Final check: this run printed no "command not found" ----------------------

@@ -30,6 +30,7 @@ FRESH_DAYS=$(tr -dc '0-9' 2>/dev/null < "$DOTFILES_DIR/.freshness" || true)
 # Flags. Parsed with a loop (not "$@") so an empty argument list is safe under set -u.
 FORCE=0
 NO_SHELL=0
+FAILED_TOOLS=()
 TOOLS_ONLY=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -369,7 +370,7 @@ fi
         IFS='|' read -r repo ver re <<<"$spec"
         for tag in "v${ver}" "${ver}"; do
             json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null) || continue
-            row=$(jq -r --arg re "$re" '[.assets[]? | select(.name | test($re))] | .[0] // empty | [.browser_download_url, (.digest // "")] | @tsv' <<<"$json" 2>/dev/null) || continue
+            row=$(jq -r --arg re "$re" '[.assets[]? | select(.name | test($re; "i"))] | .[0] // empty | [.browser_download_url, (.digest // "")] | @tsv' <<<"$json" 2>/dev/null) || continue
             if [[ -n "$row" ]]; then
                 printf '%s\n' "$row"
                 return 0
@@ -497,7 +498,8 @@ fi
         fi
 
         printf "  📦 %-12s installing v%s\n" "$name" "$pinned_ver"
-        _install_bin "$name" "$@"
+        # One tool failing must not stop the others: it is listed at the end and the run exits 1.
+        _install_bin "$name" "$@" || FAILED_TOOLS+=("$name")
     }
 
     # YYYY-MM-DD date FRESH_DAYS back (GNU, then BSD). A release is allowed when its date is <= this.
@@ -678,6 +680,10 @@ fi
 
 if [[ "$TOOLS_ONLY" -eq 1 ]]; then
     rm -f "$HOME/.cache/dotfiles_tools"
+    if [[ ${#FAILED_TOOLS[@]} -gt 0 ]]; then
+        echo -e "\n\033[1;31m❌ Not installed: ${FAILED_TOOLS[*]}\033[0m"
+        exit 1
+    fi
     echo -e "\n\033[1;32m✅ Pinned tools done.\033[0m Open a new shell (exec zsh) to use them."
     exit 0
 fi
@@ -760,6 +766,11 @@ if [[ -f "$DOCTOR" ]] && command -v zsh &>/dev/null; then
     fi
 else
     echo -e "\033[1;33m  ⚠️  doctor.zsh not found — skipping verification.\033[0m"
+fi
+
+if [[ ${#FAILED_TOOLS[@]} -gt 0 ]]; then
+    echo -e "\n\033[1;31m❌ Not installed: ${FAILED_TOOLS[*]}\033[0m"
+    exit 1
 fi
 
 # ============================================================================

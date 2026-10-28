@@ -297,7 +297,7 @@ if [[ "$apply" == true ]] && (( $#todo_kind > 0 )); then
             rmcmd=()
             case "${todo_arg[i]}" in
                 apt:*)  rmcmd=(sudo apt-get remove -y "${todo_arg[i]#apt:}") ;;
-                brew:*) rmcmd=(brew uninstall "${todo_arg[i]#brew:}") ;;
+                brew:*) rmcmd=(env HOMEBREW_NO_AUTOREMOVE=1 brew uninstall "${todo_arg[i]#brew:}") ;;
             esac
             if (( $#rmcmd )) && "${rmcmd[@]}"; then
                 _dd_ok "removed ${todo_what[i]}"

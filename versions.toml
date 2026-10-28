@@ -4,15 +4,15 @@
 # Debian, WSL (Debian-based), and macOS (quarantine window: .freshness).
 
 [tools]
-atuin = { version = "18.24.1", released = "2026-10-16" }
+atuin = { version = "18.24.2", released = "2026-10-22" }
 bat = { version = "0.26.1", released = "2025-12-02" }
-bun = { version = "1.4.3", released = "2026-10-10" }
+bun = { version = "1.4.4", released = "2026-10-22" }
 delta = { version = "0.20.1", released = "2026-10-04" }
 eza = { version = "0.23.5", released = "2026-07-09" }
 gh = { version = "2.103.0", released = "2026-10-21" }
 starship = { version = "1.27.0", released = "2026-10-17" }
-terraform = { version = "1.17.0", released = "2026-10-21" }
-uv = { version = "0.13.4", released = "2026-10-20" }
+terraform = { version = "1.16.7", released = "2026-10-22" }
+uv = { version = "0.13.5", released = "2026-10-22" }
 xh = { version = "0.26.3", released = "2026-10-21" }
 yq = { version = "4.54.1", released = "2026-09-29" }
 zellij = { version = "0.45.1", released = "2026-08-28" }

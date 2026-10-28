@@ -106,10 +106,10 @@ for tool in $(printf '%s\n' "${!REPOS[@]}" | sort); do
     fi
 
     # Parse newest release where published_at <= CUTOFF_DATE and not draft/prerelease
-    match=$(echo "$json" | jq -r --argjson cutoff "$CUTOFF_EPOCH" '
+    match=$(echo "$json" | jq -r --arg cutdate "$CUTOFF_DATE" '
         [ .[] | select(.draft == false and .prerelease == false)
           | .epoch = (.published_at | fromdateiso8601)
-          | select(.epoch <= $cutoff)
+          | select(.published_at[:10] <= $cutdate)
         ] | sort_by(.epoch) | reverse | .[0] // empty | "\(.tag_name) \(.published_at[:10])"
     ' 2>/dev/null || true)
 
