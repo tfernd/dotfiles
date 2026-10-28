@@ -283,6 +283,7 @@ How the suite works:
 - After `source core/init.zsh`, `PATH` holds Homebrew: reset it, or set `DOTDOCTOR_OFFLINE=1`, so a fixture never reaches a real `brew`, `snap` or `flatpak`.
 - A suite check that greps for a forbidden word must not spell it whole: build the pattern from adjacent quoted pieces (`"ab""cd"`). Tell grep's exit 1 (no match) from 2 or more (failure), or a broken `.git` passes silently.
 - An assert label must not contain the text `command not found`: the last suite check counts that text in the whole run log (`test/suite.zsh:604-609`).
+- A fake tool prints what the real tool printed: run the real one once and copy its text and exit status. My `rustup check` fixture said `Update available` and exited 0; the real tool says `update available` and exits 100, so the suite passed while the live run said "could not ask rustup" (the `dd_ex` block in `test/suite.zsh`).
 - A regression test must run the path that broke: `rm -f` on a missing path never reaches the trash code and passes on the old file; use an existing file.
 
 Every bug fix gets a regression test that **fails on the old code**. Verify that by

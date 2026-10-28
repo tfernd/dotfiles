@@ -866,7 +866,8 @@ command rm -rf "$dd_ex"; mkdir -p "$dd_ex/min" "$dd_ex/bin" "$dd_ex/home/.bun/in
 for dd_ex_c in date sort sed wc tr awk tail head grep cut uname stat cksum mkdir timeout; do command ln -s "$(whence -p "$dd_ex_c")" "$dd_ex/min/$dd_ex_c"; done
 print '{}' > "$dd_ex/home/.bun/install/global/package.json"
 printf '[tools]\n' > "$dd_ex/repo/versions.toml"; print 7 > "$dd_ex/repo/.freshness"
-print -rl -- '#!/bin/sh' 'case "$1" in' '    check) echo "stable-x86_64-unknown-linux-gnu - Update available : 1.0.0 (aaa 2020-01-01) -> 1.1.0 (bbb 2020-02-01)" ;;' \
+print -rl -- '#!/bin/sh' 'case "$1" in' \
+    '    check) echo "stable-x86_64-unknown-linux-gnu - update available: 1.97.1 (8bab26f4f 2026-07-14) -> 1.99.1 (58cf8f9c3 2026-10-13)"; echo "rustup - update available : 1.29.0 -> 1.29.2"; exit 100 ;;' \
     "    update) echo \"rustup update\" >> '$dd_ex/calls' ;;" 'esac' > "$dd_ex/bin/rustup"
 print -rl -- '#!/bin/sh' 'case "$*" in' '    "update --help") echo "  -g, --global   Update globally installed packages" ;;' \
     "    \"update --global\") echo \"bun update --global\" >> '$dd_ex/calls' ;;" 'esac' > "$dd_ex/bin/bun"

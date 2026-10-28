@@ -150,11 +150,12 @@ if (( $+commands[uv] )); then
 fi
 if (( $+commands[rustup] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
     local rust_out
+    # rustup check exits 100 when something is behind, and prints "update available" in lower case.
     rust_out=$(rustup check 2>&1)
-    if [[ "$rust_out" == *"Update available"* ]]; then
-        _dd_warn "Rust toolchain update available: ${(j:; :)${(M)${(f)rust_out}:#*Update available*}}"
+    if [[ "${rust_out:l}" == *"update available"* ]]; then
+        _dd_warn "Rust update available: ${(j:; :)${(M)${(f)rust_out}:#*[uU]pdate available*}}"
         user_steps+=("$(_dd_step "Update the Rust toolchain" "rustup update" 'updated|unchanged')")
-    elif [[ "$rust_out" == *"Up to date"* ]]; then
+    elif [[ "${rust_out:l}" == *"up to date"* ]]; then
         _dd_ok "Rust toolchains are up to date"
     else
         _dd_warn "could not ask rustup (offline?)"
