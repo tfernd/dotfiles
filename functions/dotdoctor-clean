@@ -1,0 +1,376 @@
+# ============================================================================
+# 🧹 DOTDOCTOR CLEAN — leftovers that break things, found by reading only
+# ============================================================================
+#   dotdoctor clean              report only: no changes
+#   dotdoctor clean --apply      also offers to remove each removable finding,
+#                                one at a time (asks first; needs a terminal)
+#
+# Checks: user systemd units whose program is gone, git insteadOf rules that
+# look broken, brotli older than 1.2.1 in Python venvs (report only), copies of
+# pinned tools that apt or Homebrew installed next to the pinned one in ~/.local/bin,
+# and old copies that self-updates left in the bin folders (name.backup-*, name.<n>.old).
+# DOTDOCTOR_PY_ROOTS=<folders> (space-separated, default $HOME) is where the
+# Python search looks, 10 levels deep. Trashed units and copies are never counted.
+# Removed units are moved, and ~/.gitconfig is copied, into
+# ${DOTDOCTOR_STATE:-~/.local/state/dotdoctor}/removed/<stamp>/ first. A git rule
+# loses only its flagged insteadOf value; the section stays while it has other keys.
+# ============================================================================
+
+dotdoctor-lib
+
+local apply=false reply
+case "${1:-}" in
+    "")      ;;
+    --apply) apply=true ;;
+    *)       echo "❌ Unknown option: $1"
+             echo "Usage: dotdoctor clean [--apply]"
+             return 1 ;;
+esac
+
+local mode="report only"
+[[ "$apply" == true ]] && mode="asks before each removal"
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+echo -e "${DD_CYN}  🧹 DOTDOCTOR CLEAN${DD_RST}   ${DD_YEL}${mode}${DD_RST}"
+echo -e "${DD_CYN}=================================================================${DD_RST}"
+
+# One entry per removable finding, used by the apply step at the end.
+# todo_val holds the flagged insteadOf value of a git entry ("" for a unit).
+# todo_sev (warn or fail) and todo_n (report lines it counts) say what a removal
+# takes off the summary.
+local -a todo_kind=() todo_arg=() todo_what=() todo_val=() todo_sev=() todo_n=()
+
+# --- 1. User systemd units whose program is gone -----------------------------
+_dd_head "User systemd units (~/.config/systemd/user)"
+local udir="$HOME/.config/systemd/user" unit name line prog state exists
+local -a units=("$udir/"*.{service,timer}(N)) words=()
+if (( $#units == 0 )); then
+    _dd_ok "no user units"
+fi
+for unit in "${units[@]}"; do
+    _dd_in_trash "$unit" && continue
+    name="${unit:t}"
+    line=$(command grep -m1 -E '^ExecStart=.' "$unit" 2>/dev/null)
+    if [[ -z "$line" ]]; then
+        if [[ "$name" == *.timer ]]; then
+            _dd_ok "$name  timer, no ExecStart=: its service is checked on its own"
+        else
+            _dd_ok "$name  no ExecStart=, nothing to check"
+        fi
+        continue
+    fi
+    # systemd allows -, @, :, +, ! before the program; the program is the first word.
+    words=(${(z)${line#ExecStart=}})
+    prog="${(Q)words[1]}"
+    while [[ "$prog" == [-@+!:]* ]]; do prog="${prog#?}"; done
+    prog="${prog//\%h/$HOME}"
+    if [[ -z "$prog" ]]; then
+        _dd_ok "$name  empty ExecStart=, nothing to check"
+        continue
+    fi
+    exists=false
+    if [[ "$prog" == */* ]]; then
+        [[ -e "$prog" ]] && exists=true
+    else
+        (( $+commands[$prog] )) && exists=true
+    fi
+    state=""
+    (( $+commands[systemctl] )) && state=$(systemctl --user is-enabled "$name" 2>/dev/null)
+    state="${state:-unknown}"
+    if [[ "$exists" == true ]]; then
+        _dd_ok "$name  runs $prog  ($state)"
+    else
+        _dd_warn "$name  dangling unit, program missing: $prog  ($state)"
+        todo_kind+=(unit); todo_arg+=("$unit"); todo_val+=(""); todo_what+=("unit $name (program missing)")
+        todo_sev+=(warn); todo_n+=(1)
+    fi
+done
+
+# --- 2. Git rewrite rules (url.<base>.insteadOf) -----------------------------
+# A rule rewrites a value to <base>. Shorthand such as gh: or user@host: counts as
+# a plausible URL; a space in either part, or no scheme and no host, does not.
+local re_url='^[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]/]+'
+local re_scp='^[^[:space:]/:]+:'
+local rules_raw="" rule key value section base flagged base_ok value_ok gcfg dup j sev
+(( $+commands[git] )) && rules_raw=$(git config --global --get-regexp '^url\..*\.insteadof$' 2>/dev/null)
+if [[ -n "$rules_raw" ]]; then
+    _dd_head "Git rewrite rules (url.*.insteadOf in the global git config)"
+fi
+for rule in "${(@f)rules_raw}"; do
+    [[ -n "$rule" ]] || continue
+    # Subsection names may hold spaces, so split at the last ".insteadof".
+    if [[ "$rule" == *.insteadof ]]; then
+        section="${rule%.insteadof}"
+        value=""
+    else
+        section="${rule%.insteadof *}"
+        value="${rule##*.insteadof }"
+    fi
+    base="${section#url.}"
+    base_ok=false; value_ok=false; flagged=false
+    if [[ "$base" != *[[:space:]]* ]] && { [[ "$base" =~ $re_url ]] || [[ "$base" =~ $re_scp ]]; }; then
+        base_ok=true
+    fi
+    if [[ "$value" != *[[:space:]]* ]] && { [[ "$value" =~ $re_url ]] || [[ "$value" =~ $re_scp ]]; }; then
+        value_ok=true
+    fi
+    if [[ "$value" == https://* && "$base_ok" == false ]]; then
+        _dd_fail "$section  points an https URL at a non-URL"
+        flagged=true
+        sev=fail
+    elif [[ "$base_ok" == false || "$value_ok" == false ]]; then
+        _dd_warn "$section  insteadOf rule has a space or is not a plausible URL"
+        flagged=true
+        sev=warn
+    else
+        _dd_ok "$section  insteadOf rule looks valid"
+    fi
+    # One entry per flagged value: a section can hold a valid rule next to a bad one.
+    # A repeated value adds to the count its entry takes off the summary (todo_n).
+    if [[ "$flagged" == true ]]; then
+        dup=false
+        for (( j = 1; j <= $#todo_kind; j++ )); do
+            if [[ "${todo_kind[j]}" == git && "${todo_arg[j]}" == "$section" && "${todo_val[j]}" == "$value" ]]; then
+                dup=true
+                (( todo_n[j] += 1 ))
+            fi
+        done
+        if [[ "$dup" == false ]]; then
+            todo_kind+=(git); todo_arg+=("$section"); todo_val+=("$value")
+            todo_what+=("git rule $section (insteadOf $value)")
+            todo_sev+=("$sev"); todo_n+=(1)
+        fi
+    fi
+done
+
+# --- 3. Brotli in Python venvs (report only, never removed) ------------------
+_dd_head "Brotli in Python venvs (report only)"
+local dist ver lowest found=false brotli_fixed
+local -i old=0
+local py_label="${DOTDOCTOR_PY_ROOTS:-$HOME}"
+py_label="${py_label//$HOME/~}"
+brotli_fixed=$(_dd_field python-brotli fixed)
+for dist in ${(f)"$(_dd_py_dists)"}; do
+    [[ -n "$dist" ]] || continue
+    found=true
+    ver="${${dist:t}#brotli-}"
+    ver="${ver%.dist-info}"
+    if [[ -z "$brotli_fixed" ]]; then
+        _dd_warn "python brotli $ver  $dist  (no fixed version in versions.toml: not checked)"
+        continue
+    fi
+    lowest=$(print -l "$ver" "$brotli_fixed" | sort -V | head -1)
+    if [[ "$lowest" == "$ver" && "$ver" != "$brotli_fixed" ]]; then
+        _dd_warn "python brotli $ver is below $brotli_fixed: $dist"
+        (( old += 1 ))
+    else
+        _dd_ok "python brotli $ver  $dist"
+    fi
+done
+if [[ "$found" == false ]]; then
+    _dd_ok "python brotli: none found under $py_label"
+fi
+if (( old > 0 )) && [[ "$DD_QUIET" != true ]]; then
+    printf "  ${DD_DIM}  Removing brotli can break packages that depend on it, and the project lock file must change too. --apply never touches it.${DD_RST}\n"
+fi
+
+# --- 4. Copies of pinned tools outside ~/.local/bin ---------------------------
+# ~/.local/bin comes first on PATH, so the pinned copy is the one that runs. A copy from apt or
+# Homebrew is unused, and its package manager can still upgrade it past the pin and the
+# .freshness window. Removal is offered only when apt would remove nothing else with it.
+_dd_head "Copies of pinned tools outside ~/.local/bin"
+local pinbin="$HOME/.local/bin" pt pcopy preal pinreal powner pver pnrem pok
+local -a pseen=()
+local -i pdups=0
+for pt in ${(f)"$(_dd_pinned_tools)"}; do
+    [[ -x "$pinbin/$pt" ]] || continue
+    pinreal="$pinbin/$pt"
+    pinreal="${pinreal:A}"
+    for pcopy in ${(f)"$(whence -ap -- $pt 2>/dev/null)"}; do
+        preal="${pcopy:A}"
+        [[ "$preal" == "$pinreal" ]] && continue
+        _dd_in_trash "$pcopy" && continue
+        (( ${pseen[(Ie)$preal]} )) && continue
+        pseen+=("$preal")
+        (( pdups += 1 ))
+        powner=""
+        if [[ "$preal" == */Cellar/*/* ]]; then
+            powner="brew:${${preal#*/Cellar/}%%/*}"
+        elif (( $+commands[dpkg] )); then
+            powner=$(dpkg -S "$preal" 2>/dev/null | command sed -n 1p)
+            powner="${${powner%%:*}%%,*}"
+            [[ -n "$powner" ]] && powner="apt:$powner"
+        fi
+        if [[ -z "$powner" ]]; then
+            _dd_warn "$pt is also at ${pcopy/#$HOME/~} (not from apt or Homebrew: remove it yourself if you do not use it)"
+            continue
+        fi
+        pver=$("$pcopy" --version 2>/dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command sed -n 1p)
+        _dd_warn "$pt is also installed by ${powner%%:*} ($pcopy${pver:+ $pver}): the pinned copy in ~/.local/bin runs first, so this one is unused, and ${powner%%:*} can upgrade it past the pin"
+        pok=true
+        if [[ "$powner" == apt:* ]]; then
+            if (( $+commands[apt-get] )); then
+                pnrem=$(apt-get -s remove "${powner#apt:}" 2>/dev/null | command grep -c '^Remv')
+                (( pnrem > 1 )) && pok=false
+            else
+                pok=false
+            fi
+        fi
+        if [[ "$pok" == true ]] && ! (( ${todo_arg[(Ie)$powner]} )); then
+            todo_kind+=(dup); todo_arg+=("$powner"); todo_val+=(""); todo_what+=("the ${powner%%:*} package ${powner#*:}"); todo_sev+=(warn); todo_n+=(1)
+        elif [[ "$pok" != true ]]; then
+            printf "  ${DD_DIM}  Removing it would take other packages with it: remove it yourself if you want it gone.${DD_RST}\n"
+        fi
+    done
+done
+if (( pdups == 0 )); then
+    _dd_ok "no copy of a pinned tool outside ~/.local/bin"
+fi
+
+# --- 5. Old copies that self-updates left in the bin folders ------------------
+# A name.backup-<version> or name.<number>.old next to name. The copy keeps running if someone
+# calls it, and it is often the vulnerable version the update replaced.
+_dd_head "Old copies left by updates (name.backup-*, name.<number>.old)"
+local odir oldf obase
+local -i olds=0
+for odir in "$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.cargo/bin"; do
+    for oldf in "$odir"/*.backup-*(N.) "$odir"/*.old(N.); do
+        _dd_in_trash "$oldf" && continue
+        obase="${oldf:t}"
+        obase="${obase%%.backup-*}"
+        obase="${obase%.old}"
+        obase="${obase%.<->}"
+        [[ -e "$odir/$obase" ]] || continue
+        (( olds += 1 ))
+        _dd_warn "old copy of $obase: ${oldf/#$HOME/~}"
+        todo_kind+=(leftover); todo_arg+=("$oldf"); todo_val+=(""); todo_what+=("old copy ${oldf/#$HOME/~}"); todo_sev+=(warn); todo_n+=(1)
+    done
+done
+if (( olds == 0 )); then
+    _dd_ok "no old copies in ~/.local/bin, ~/.bun/bin or ~/.cargo/bin"
+fi
+
+# --- Apply: ask for each removable finding, then move it into the backup ----
+if [[ "$apply" == true ]] && (( $#todo_kind > 0 )); then
+    if [[ ! -t 0 ]]; then
+        echo "❌ --apply asks before each removal, so it needs a terminal. Nothing was removed."
+        return 1
+    fi
+    _dd_head "Removals (asks first; originals go to a backup folder)"
+    local i ch k n_left link value_esc stamp backup_dir="" git_saved=false units_moved=false
+    local -a rmcmd=()
+    local state_dir="${DOTDOCTOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotdoctor}"
+    stamp=$(date +%Y%m%d_%H%M%S)
+    for (( i = 1; i <= $#todo_kind; i++ )); do
+        reply=n
+        read -q "reply?Remove ${todo_what[i]}? [y/N] "
+        echo
+        if [[ "$reply" != y ]]; then
+            printf "  ${DD_DIM}-${DD_RST} kept: %s\n" "${todo_what[i]}"
+            continue
+        fi
+        if [[ -z "$backup_dir" ]]; then
+            backup_dir="$state_dir/removed/$stamp"
+            if ! ( umask 077; mkdir -p -- "$backup_dir" ); then
+                _dd_fail "cannot create $backup_dir; nothing removed"
+                return 1
+            fi
+        fi
+        if [[ "${todo_kind[i]}" == unit ]]; then
+            unit="${todo_arg[i]}"
+            if ! command mv -- "$unit" "$backup_dir/${unit:t}"; then
+                _dd_fail "could not move ${unit:t}; kept it"
+                continue
+            fi
+            _dd_ok "moved ${unit:t} to $backup_dir"
+            if [[ "${todo_sev[i]}" == fail ]]; then (( DD_FAILS -= todo_n[i] )); else (( DD_WARNS -= todo_n[i] )); fi
+            units_moved=true
+            # The enablement link in <target>.wants/ would otherwise dangle.
+            for link in "$udir"/*.wants/"${unit:t}"(N); do
+                _dd_in_trash "$link" && continue
+                if command mv -- "$link" "$backup_dir/${link:h:t}__${link:t}"; then
+                    _dd_ok "moved enablement link ${link:h:t}/${link:t} to $backup_dir"
+                else
+                    _dd_fail "could not move $link"
+                fi
+            done
+        elif [[ "${todo_kind[i]}" == dup ]]; then
+            rmcmd=()
+            case "${todo_arg[i]}" in
+                apt:*)  rmcmd=(sudo apt-get remove -y "${todo_arg[i]#apt:}") ;;
+                brew:*) rmcmd=(brew uninstall "${todo_arg[i]#brew:}") ;;
+            esac
+            if (( $#rmcmd )) && "${rmcmd[@]}"; then
+                _dd_ok "removed ${todo_what[i]}"
+                if [[ "${todo_sev[i]}" == fail ]]; then (( DD_FAILS -= todo_n[i] )); else (( DD_WARNS -= todo_n[i] )); fi
+            else
+                _dd_fail "could not remove ${todo_what[i]}; kept it"
+            fi
+        elif [[ "${todo_kind[i]}" == leftover ]]; then
+            if command mv -- "${todo_arg[i]}" "$backup_dir/${todo_arg[i]:t}"; then
+                _dd_ok "moved ${todo_arg[i]:t} to $backup_dir"
+                if [[ "${todo_sev[i]}" == fail ]]; then (( DD_FAILS -= todo_n[i] )); else (( DD_WARNS -= todo_n[i] )); fi
+            else
+                _dd_fail "could not move ${todo_arg[i]:t}; kept it"
+            fi
+        else
+            section="${todo_arg[i]}"
+            value="${todo_val[i]}"
+            if [[ "$git_saved" != true ]]; then
+                gcfg="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
+                if [[ -f "$HOME/.gitconfig" ]] && ! command cp -- "$HOME/.gitconfig" "$backup_dir/.gitconfig"; then
+                    _dd_fail "could not copy ~/.gitconfig to the backup; kept git rule $section"
+                    continue
+                fi
+                if [[ -f "$gcfg" ]] && ! command cp -- "$gcfg" "$backup_dir/git-config-xdg"; then
+                    _dd_fail "could not copy the XDG git config to the backup; kept git rule $section"
+                    continue
+                fi
+                git_saved=true
+            fi
+            # Unset only this value. git reads the pattern as an extended regex, so the
+            # value is escaped and anchored. --unset-all also takes a value listed twice.
+            value_esc="$value"
+            for ch in '\' '.' '[' ']' '(' ')' '*' '+' '?' '{' '}' '|' '^' '$'; do
+                value_esc="${value_esc//"$ch"/"\\$ch"}"
+            done
+            if ! git config --global --unset-all "${section}.insteadof" "^${value_esc}\$" 2>/dev/null; then
+                _dd_fail "git could not remove insteadOf $value from $section; kept it"
+                continue
+            fi
+            _dd_ok "removed insteadOf $value from $section"
+            if [[ "${todo_sev[i]}" == fail ]]; then (( DD_FAILS -= todo_n[i] )); else (( DD_WARNS -= todo_n[i] )); fi
+            # The section goes only when no key is left in it.
+            n_left=0
+            for k in ${(f)"$(git config --global --name-only --list 2>/dev/null)"}; do
+                [[ "$k" == "${section}."* ]] && (( n_left += 1 ))
+            done
+            if (( n_left == 0 )) && git config --global --remove-section "$section" 2>/dev/null; then
+                _dd_ok "removed empty git section $section"
+            fi
+        fi
+    done
+    if [[ "$units_moved" == true ]] && (( $+commands[systemctl] )); then
+        if systemctl --user daemon-reload 2>/dev/null; then
+            _dd_ok "systemd user manager reloaded"
+        else
+            _dd_fail "systemctl --user daemon-reload failed"
+        fi
+    fi
+fi
+
+if [[ "$apply" != true ]] && (( $#todo_kind > 0 )); then
+    printf "${DD_DIM}Run dotdoctor clean --apply to review the removable items one by one.${DD_RST}\n"
+fi
+
+# --- Summary ----------------------------------------------------------------
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+if (( DD_FAILS == 0 && DD_WARNS == 0 )); then
+    echo -e "${DD_GRN}  ✅ Nothing to clean${DD_RST}"
+elif (( DD_FAILS == 0 )); then
+    echo -e "${DD_YEL}  ⚠️  No failing checks; ${DD_WARNS} item(s) to review${DD_RST}"
+else
+    echo -e "${DD_RED}  ❌ ${DD_FAILS} failing check(s), ${DD_WARNS} item(s) to review${DD_RST}"
+fi
+echo -e "${DD_CYN}=================================================================${DD_RST}\n"
+
+return $(( DD_FAILS > 0 ))

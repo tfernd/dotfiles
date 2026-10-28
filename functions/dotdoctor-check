@@ -1,0 +1,259 @@
+# ============================================================================
+# 🧾 DOTDOCTOR CHECK — pinned versions and known advisories
+# ============================================================================
+# Reads [tools], [fixes] and [osv] from versions.toml. Makes no network calls, except
+# with --latest (runs update-versions.sh: newest releases past the .freshness window) or
+# --advisories (asks OSV.dev about the [osv] tools at their installed versions).
+# Any other argument is an error.
+# DOTDOCTOR_PY_ROOTS=<folders> (space-separated, default $HOME) is where the
+# Python brotli search looks, 10 levels deep. Trashed copies are never counted.
+# Node and Bun copies on disk run only when you own them and no one else can
+# write them, under a 5 second timeout; otherwise the version comes from the path
+# or, for a uv tool's Node, from its package metadata (never run).
+# ============================================================================
+
+local arg
+for arg in "$@"; do
+    if [[ "$arg" != --latest && "$arg" != --advisories ]]; then
+        echo "❌ unknown option: $arg (usage: dotdoctor check [--latest] [--advisories])"
+        return 1
+    fi
+done
+
+dotdoctor-lib
+
+[[ -f "$DD_TOML" ]] || { echo "❌ versions.toml not found: $DD_TOML"; return 1; }
+[[ -n "$DD_QUARANTINE_DAYS" ]] || { echo "❌ $DOTFILES_DIR/.freshness is missing or holds no number of days"; return 1; }
+
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+echo -e "${DD_CYN}  🧾 DOTDOCTOR CHECK${DD_RST}   quarantine: ${DD_YEL}${DD_QUARANTINE_DAYS} days${DD_RST}"
+echo -e "${DD_CYN}=================================================================${DD_RST}"
+
+# --- Pinned tools: installed version against versions.toml -----------------
+_dd_head "Pinned tools (versions.toml [tools])"
+local tool pinned installed released age line today rel_epoch pin_bad msg
+today=$(_dd_epoch "$(_dd_day "$DD_NOW")")
+for tool in ${(f)"$(sed -n '/^\[tools\]/,/^\[/p' "$DD_TOML" | command grep -E '^[a-z]' | sed -E 's/ *=.*//')"}; do
+    pinned=$(_dd_field "$tool" version)
+    released=$(_dd_field "$tool" released)
+    # Whole days between two midnights: a DST day is 23 or 25 hours long,
+    # so adding 43200 before the division rounds to the nearest day.
+    rel_epoch=$(_dd_epoch "$released")
+    age=$(( (today - rel_epoch + 43200) / 86400 ))
+    installed=$(_dd_version "$tool")
+    [[ -z "$installed" && "$tool" == bat ]] && installed=$(_dd_version batcat)
+    if [[ -z "$installed" ]]; then
+        if (( $+commands[$tool] )); then
+            _dd_warn "$tool  installed, but its version could not be read"
+        else
+            _dd_fail "$tool  not on PATH (pinned $pinned)"
+        fi
+        continue
+    fi
+    line="$(printf '%-12s pinned %-9s installed %-9s released %dd ago' "$tool" "$pinned" "$installed" "$age")"
+    # Advisories that cover the pin itself. Their failures print after this line.
+    _dd_pin_advisories "$tool" "$pinned"
+    pin_bad=false
+    (( $#DD_PIN_MSGS )) && pin_bad=true
+    if [[ "$installed" == "$pinned" ]]; then
+        if [[ "$pin_bad" == true ]]; then
+            # Not an ok line: the failure below says what to do.
+            [[ "$DD_QUIET" == true ]] || printf "    %s\n" "$line"
+        elif (( age < DD_QUARANTINE_DAYS )); then
+            _dd_warn "$line  the pin is inside the quarantine"
+        else
+            _dd_ok "$line"
+        fi
+    elif [[ "$(print -l "$pinned" "$installed" | command sort -V | command tail -1)" == "$installed" ]]; then
+        _dd_warn "$line  newer than the pin: bump the pin with update-versions.sh once the release is ${DD_QUARANTINE_DAYS}+ days old"
+    elif [[ "$pin_bad" == true ]]; then
+        _dd_warn "$line  older than the pin; the pin is affected, so do not run install.sh until it is bumped"
+    else
+        _dd_warn "$line  differs from the pin: run install.sh"
+    fi
+    for msg in "${DD_PIN_MSGS[@]}"; do
+        _dd_fail "$msg"
+    done
+done
+
+# --- Known advisories: installed versions against versions.toml [fixes] -----
+_dd_head "Known advisories (versions.toml [fixes])"
+local curl_brotli dist pyver found=0 cve cite lib_ver lib_doc node_here bun_here real label ver rel name note
+local f
+local -a node_copies bun_copies snap_libs flatpak_libs parts
+local -A seen=()
+curl_brotli=$(curl -V 2>/dev/null | command grep -oE 'brotli/[0-9.]+' | head -1)
+
+# The copies on PATH come first; a later copy that resolves to one of them is skipped.
+node_here=$(whence -p node 2>/dev/null)
+bun_here=$(whence -p bun 2>/dev/null)
+[[ -n "$node_here" ]] && seen[${node_here:A}]=1
+[[ -n "$bun_here" ]] && seen[${bun_here:A}]=1
+_dd_advisory "node" node-brotli "$(_dd_version node)" "Node bundles its own Brotli: update Node itself"
+_dd_advisory "bun" bun-brotli "$(_dd_version bun)" "bun bundles its own Brotli: update bun"
+
+# System libbrotli. A distro can backport a fix without changing the upstream
+# version, so its Debian changelog is checked first (absent on other systems).
+lib_ver=$(dpkg-query -W -f='${Version}' libbrotli1 2>/dev/null | command sed 's/-.*//')
+cve=$(_dd_field libbrotli cve)
+lib_doc=/usr/share/doc/libbrotli1/changelog.Debian.gz
+# Only a changelog bullet that names the CVE counts; that bullet is shown in the ✓ line.
+cite=$(_dd_changelog_cite "$lib_doc" "$cve")
+if [[ -n "$lib_ver" && -n "$cite" ]]; then
+    _dd_fact advisory libbrotli "$lib_ver"
+    _dd_ok "libbrotli $lib_ver  patched by your distro (changelog: $cite)"
+else
+    _dd_advisory "libbrotli" libbrotli "$lib_ver" \
+        "system library, curl uses ${curl_brotli:-no brotli}; check your distro's security notice"
+fi
+
+# Other Node copies: nvm, fnm and Node inside uv tools. The find depth must reach
+# uv/tools/<tool>/lib/pythonX.Y/site-packages/nodejs_wheel/bin/node (depth 9).
+# A copy is run only when _dd_runnable allows it (see _dd_runtime_version).
+node_copies=(
+    $HOME/.nvm/versions/node/*/bin/node(N)
+    $HOME/.local/share/fnm/node-versions/*/installation/bin/node(N)
+    ${(f)"$(command find "$HOME/.local/share" -maxdepth 9 "${DD_TRASH_PRUNE[@]}" -type f -name node -path '*/bin/node' -print 2>/dev/null | command sort)"}
+)
+for f in "${node_copies[@]}"; do
+    [[ -n "$f" && -f "$f" ]] || continue
+    _dd_in_trash "$f" && continue
+    real=${f:A}
+    [[ -n "${seen[$real]:-}" ]] && continue
+    seen[$real]=1
+    label="${f/#$HOME/~}"
+    ver=$(_dd_runtime_version "$f" node)
+    note="Node bundles its own Brotli: update Node itself"
+    if [[ -z "$ver" ]]; then
+        # Not run: the version comes from the package metadata beside the copy, if any.
+        ver=$(_dd_metadata_version "$f" node)
+        [[ -n "$ver" ]] && note="version from package metadata, copy not run; $note"
+    fi
+    if [[ -z "$ver" ]]; then
+        if _dd_runnable "$f"; then
+            _dd_warn "$label  installed, but its version could not be read"
+        else
+            _dd_warn "$label  not run: you do not solely own it, or others can write it, and its path names no version"
+        fi
+        continue
+    fi
+    _dd_advisory "$label" node-brotli "$ver" "$note"
+done
+
+# Other Bun copies, same rules.
+bun_copies=($HOME/.bun/bin/bun(N))
+for f in "${bun_copies[@]}"; do
+    [[ -n "$f" && -f "$f" ]] || continue
+    _dd_in_trash "$f" && continue
+    real=${f:A}
+    [[ -n "${seen[$real]:-}" ]] && continue
+    seen[$real]=1
+    label="${f/#$HOME/~}"
+    ver=$(_dd_runtime_version "$f" bun)
+    if [[ -z "$ver" ]]; then
+        if _dd_runnable "$f"; then
+            _dd_warn "$label  installed, but its version could not be read"
+        else
+            _dd_warn "$label  not run: you do not solely own it, or others can write it, and its path names no version"
+        fi
+        continue
+    fi
+    _dd_advisory "$label" bun-brotli "$ver" "bun bundles its own Brotli: update bun"
+done
+
+# Snap and Flatpak runtimes ship their own libbrotli, so the publisher must update
+# them. The version comes from the file name (libbrotlidec.so.1.1.0 gives 1.1.0).
+snap_libs=(/snap/*/current/usr/lib/*/libbrotlidec.so.1.*.*(N))
+for f in "${snap_libs[@]}"; do
+    _dd_in_trash "$f" && continue
+    rel=${f#/snap/}
+    name=${rel%%/*}
+    label="snap $name"
+    ver=${${f:t}#libbrotlidec.so.}
+    cite=$(_dd_changelog_cite "/snap/$name/current/usr/share/doc/libbrotli1/changelog.Debian.gz" "$cve")
+    if [[ -n "$cite" ]]; then
+        _dd_fact advisory libbrotli "$ver"
+        _dd_ok "$label libbrotli $ver  patched by the snap (changelog: $cite)"
+    else
+        _dd_advisory "$label" libbrotli "$ver" "update with: sudo snap refresh"
+    fi
+done
+flatpak_libs=(
+    /var/lib/flatpak/runtime/*/*/*/active/files/lib/*/libbrotlidec.so.1.*.*(N)
+    $HOME/.local/share/flatpak/runtime/*/*/*/active/files/lib/*/libbrotlidec.so.1.*.*(N)
+)
+for f in "${flatpak_libs[@]}"; do
+    _dd_in_trash "$f" && continue
+    # runtime/<id>/<arch>/<branch>/active/...
+    rel=${f#*/runtime/}
+    parts=(${(s:/:)rel})
+    ver=${${f:t}#libbrotlidec.so.}
+    if [[ "$f" == /var/lib/flatpak/* ]]; then
+        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (system)" libbrotli "$ver" "update with: sudo flatpak update"
+    else
+        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (user)" libbrotli "$ver" "update with: flatpak update --user"
+    fi
+done
+local py_label="${DOTDOCTOR_PY_ROOTS:-$HOME}"
+py_label="${py_label//$HOME/~}"
+for dist in ${(f)"$(_dd_py_dists)"}; do
+    [[ -n "$dist" ]] || continue
+    found=1
+    pyver="${${dist:t}#brotli-}"
+    pyver="${pyver%.dist-info}"
+    _dd_advisory "python brotli" python-brotli "$pyver" "$dist"
+done
+(( found )) || _dd_ok "python brotli: none found under $py_label"
+
+# --- OSV.dev advisories (opt-in) ----------------------------------------------
+if [[ " $* " == *" --advisories "* ]]; then
+    _dd_head "Advisories (OSV.dev, versions.toml [osv])"
+    dotdoctor-osv
+fi
+
+# --- Summary ----------------------------------------------------------------
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+if (( DD_FAILS == 0 && DD_WARNS == 0 )); then
+    echo -e "${DD_GRN}  ✅ Pins match and no known advisory affects what is installed${DD_RST}"
+elif (( DD_FAILS == 0 )); then
+    echo -e "${DD_YEL}  ⚠️  No failing checks; ${DD_WARNS} item(s) to review${DD_RST}"
+else
+    echo -e "${DD_RED}  ❌ ${DD_FAILS} failing check(s), ${DD_WARNS} item(s) to review${DD_RST}"
+fi
+echo -e "${DD_CYN}=================================================================${DD_RST}\n"
+
+if [[ " $* " == *" --latest "* ]]; then
+    echo -e "${DD_DIM}Asking GitHub for the newest releases ${DD_QUARANTINE_DAYS}+ days old (update-versions.sh)...${DD_RST}"
+    bash "$DOTFILES_DIR/update-versions.sh"
+fi
+
+local rc=$(( DD_FAILS > 0 ))
+# In a terminal, offer the fixes right away, then check again. Agents and scripts are never asked.
+if [[ -t 0 && -t 1 && "${IS_AGENT:-false}" != true && -z "${DD_RECHECK:-}" ]] && (( DD_FAILS + DD_WARNS )); then
+    local reply=""
+    print -rn -- "Update now? y: ask before each step, a: run them all (deleting still asks) [y/a/N] "
+    read -r reply || [[ -n "$reply" ]] || reply=n
+    if [[ "$reply" == [yYaA]* ]]; then
+        local DD_FROM_CHECK=1 DD_APPLY_ALL=""
+        [[ "$reply" == [aA]* ]] && DD_APPLY_ALL=1
+        dotdoctor-update --apply
+        # The update put new binaries on PATH; zsh still holds the old command paths.
+        rehash
+        echo -e "\n${DD_CYN}▸ Checking again after the update${DD_RST}   ${DD_DIM}(only what still needs attention)${DD_RST}"
+        local DD_RECHECK=1 DD_COLOR="${DD_RST:+1}" out head=""
+        out=$(dotdoctor-check ${@:#--latest})
+        rc=$?
+        setopt local_options extended_glob
+        for line in "${(@f)out}"; do
+            case "${line//$'\e'\[[0-9;]#m/}" in
+                "▸ "*)           head="$line" ;;
+                "  ✗ "*|"  ! "*) [[ -n "$head" ]] && print -r -- "$head"
+                                 head=""
+                                 print -r -- "$line" ;;
+                *"failing check"*|*"to review"*|*"Pins match"*) print -r -- "$line" ;;
+            esac
+        done
+        return $rc
+    fi
+fi
+return $rc

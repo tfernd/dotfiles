@@ -1,0 +1,519 @@
+# ============================================================================
+# 🔎 DOTDOCTOR SCAN — local indicators of compromise (read-only)
+# ============================================================================
+#   dotdoctor scan              report with pass / review / fail (human)
+#   dotdoctor scan --facts      the same checks as sorted, stable facts (TSV)
+#   dotdoctor scan --save       store the facts as the baseline (old copy: baseline.tsv.prev)
+#   dotdoctor scan --diff       compare the facts with the baseline
+#   --deep (with any of them)   also verify every package file (Linux, dpkg -V)
+#
+# Works on Linux and macOS. Checks that a platform lacks are reported as
+# skipped, never failed. Nothing machine-specific is hard-coded: no user names,
+# no vendor names, no paths. Facts write the home folder as ~, so a baseline
+# compares cleanly across accounts and machines.
+#
+# Reproducible: facts hold no PIDs, timestamps or counts that move by
+# themselves, and are sorted in the C locale, so two runs on an unchanged
+# machine print the same bytes. The baseline lives in
+# ~/.local/state/dotdoctor (not in the repo: it describes one machine).
+# No network, no sudo. Only --save writes anything, and it keeps the previous
+# baseline as baseline.tsv.prev before it replaces the baseline.
+# ============================================================================
+
+dotdoctor-lib
+
+local deep=false mode=report arg
+for arg in "$@"; do
+    case "$arg" in
+        --deep)  deep=true ;;
+        --facts) mode=facts ;;
+        --save)  mode=save ;;
+        --diff)  mode=diff ;;
+        *) echo "❌ unknown scan option: $arg"; return 1 ;;
+    esac
+done
+# The helpers in dotdoctor-lib read DD_QUIET: silent outside the report.
+local DD_QUIET=false
+[[ "$mode" == report ]] || DD_QUIET=true
+
+_dd_fact scan-options deep "$deep"
+_dd_fact scan-options os "$DD_OS"
+
+if [[ "$mode" == report ]]; then
+    echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+    echo -e "${DD_CYN}  🔎 DOTDOCTOR SCAN${DD_RST}   $(uname -sr)"
+    echo -e "${DD_CYN}=================================================================${DD_RST}"
+fi
+
+# --- Things that start by themselves ----------------------------------------
+_dd_head "Things that start by themselves"
+local cron_jobs keys name item
+local -a startup=()
+cron_jobs=$(crontab -l 2>/dev/null | command grep -cvE '^[[:space:]]*(#|$)')
+_dd_fact cron user-jobs "$cron_jobs"
+if (( cron_jobs > 0 )); then
+    _dd_warn "user crontab: $cron_jobs job(s), review with: crontab -l"
+else
+    _dd_ok "user crontab: none"
+fi
+
+case "$DD_OS" in
+    mac)
+        for item in ~/Library/LaunchAgents/*.plist(N) /Library/LaunchAgents/*.plist(N) /Library/LaunchDaemons/*.plist(N); do
+            _dd_in_trash "$item" && continue
+            startup+=("$item")
+            _dd_fact launchd "$item" present
+        done
+        ;;
+    linux)
+        for item in ~/.config/autostart/*.desktop(N); do
+            _dd_in_trash "$item" && continue
+            startup+=("$item")
+            _dd_fact autostart "${item:t}" present
+        done
+        if (( $+commands[systemctl] )); then
+            local -a units=(${(f)"$(systemctl --user list-unit-files --state=enabled --no-legend 2>/dev/null | awk '{print $1}')"})
+            for name in "${units[@]}"; do
+                [[ -n "$name" ]] && _dd_fact systemd-user "$name" enabled
+            done
+        fi
+        ;;
+esac
+if (( $#startup )); then
+    local -a startup_names=()
+    for item in "${startup[@]}"; do startup_names+=("${item:t}"); done
+    _dd_warn "start-up items: ${(j:, :)startup_names} (review each)"
+else
+    _dd_ok "start-up items (launchd or autostart): none"
+fi
+
+# Libraries the loader injects into every program.
+if [[ "$DD_OS" == linux ]]; then
+    if [[ -s /etc/ld.so.preload ]]; then
+        _dd_fact preload ld.so.preload set
+        _dd_fail "/etc/ld.so.preload is set: every program loads it"
+    else
+        _dd_fact preload ld.so.preload unset
+        _dd_ok "/etc/ld.so.preload: not set"
+    fi
+fi
+for name in LD_PRELOAD DYLD_INSERT_LIBRARIES; do
+    if [[ -n "${(P)name:-}" ]]; then
+        _dd_fact preload "$name" set
+        _dd_fail "$name is set in this shell: ${(P)name}"
+    else
+        _dd_fact preload "$name" unset
+        _dd_ok "$name: not set"
+    fi
+done
+
+keys=0
+[[ -f ~/.ssh/authorized_keys ]] && keys=$(command grep -cvE '^[[:space:]]*(#|$)' ~/.ssh/authorized_keys)
+_dd_fact ssh authorized-keys "$keys"
+if (( keys > 0 )); then
+    _dd_warn "~/.ssh/authorized_keys: $keys key(s) can log in as you, check each one"
+else
+    _dd_ok "~/.ssh/authorized_keys: none"
+fi
+
+# Shell start-up files that download and run something, or decode and run it.
+local -a rc_files hooks
+local hook rc text
+for rc in ~/.zshenv(N) ~/.zprofile(N) ~/.zshrc(N) ~/.profile(N) ~/.bashrc(N) ~/.bash_profile(N); do
+    _dd_in_trash "$rc" || rc_files+=("$rc")
+done
+if (( $#rc_files )); then
+    # -H: always print the file name, also when only one file is searched.
+    # The last alternatives: eval "$(curl ...)", source <(curl ...), and bash or sh
+    # with <(curl ...) or -c "$(curl ...)". wget counts the same as curl.
+    hooks=(${(f)"$(command grep -HnE 'curl[^|]*\|[[:space:]]*(ba|z)?sh|wget[^|]*\|[[:space:]]*(ba|z)?sh|base64 +(-d|-D|--decode)|/dev/tcp/|(^|[^[:alnum:]_])eval[[:space:]]+"?\$\((curl|wget)|(^|[^[:alnum:]_])(source|\.)[[:space:]]+<\((curl|wget)|(^|[^[:alnum:]_])(ba|z)?sh[[:space:]]+(<\(|-c[[:space:]]+"?\$\()(curl|wget)' -- "${rc_files[@]}" 2>/dev/null)"})
+fi
+for hook in "${hooks[@]}"; do
+    rc="${hook%%:*}"
+    text="${hook#*:}"
+    # A tab in the line would split the TSV fact into more than three fields.
+    text=${text//$'\t'/ }
+    _dd_fact rc-hook "$rc" "$text"
+done
+if (( $#hooks )); then
+    _dd_fail "shell start-up files download or decode and run code:"
+    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${hooks[@]}"
+else
+    _dd_ok "shell start-up files: no download-and-run or decode lines"
+fi
+
+# --- Listening TCP sockets ---------------------------------------------------
+# _dd_listener <address> <process>: loopback is fine, anything else needs a look
+_dd_listener() {
+    case "$1" in
+        127.*|'[::1]'*|localhost*)
+            loopback+=1
+            _dd_fact listen-local "$1" "$2"
+            ;;
+        *)
+            _dd_fact listen-network "$1" "$2"
+            _dd_warn "listening on $1 $2 (not loopback: reachable from your network)"
+            ;;
+    esac
+}
+
+_dd_head "Listening TCP sockets"
+local -a socks cols
+local row laddr pname
+local -i loopback=0
+if (( $+commands[ss] )); then
+    # ss -H -tlnp: local address in column 4, users:(("name",pid=..)) in column 6.
+    socks=(${(f)"$(ss -H -tlnp 2>/dev/null)"})
+    for row in "${socks[@]}"; do
+        cols=(${=row})
+        laddr="${cols[4]:-}"
+        [[ "$laddr" == *:* ]] || continue
+        pname="${${cols[6]:-}#*\"}"
+        pname="${pname%%\"*}"
+        _dd_listener "$laddr" "${pname:-?}"
+    done
+elif (( $+commands[lsof] )); then
+    # lsof: command name in column 1, address in column 9.
+    socks=(${(f)"$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | tail -n +2)"})
+    for row in "${socks[@]}"; do
+        cols=(${=row})
+        laddr="${cols[9]:-}"
+        [[ -n "$laddr" ]] || continue
+        _dd_listener "$laddr" "${cols[1]:-?}"
+    done
+else
+    _dd_fact skipped listeners "no ss or lsof"
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- skipped: neither ss nor lsof is installed${DD_RST}\n"
+fi
+if (( loopback > 0 )); then
+    _dd_ok "$loopback listener(s) on loopback only"
+fi
+
+# Outbound connections are a list to read, not a verdict: they change all the time, so nothing
+# is written to the facts or the baseline.
+_dd_head "Outbound TCP connections (to addresses outside your network)"
+if (( $+commands[ss] )); then
+    local -A out_ports=()
+    local -a out_progs=() oports=()
+    local oprog opeer oip oport
+    for row in ${(f)"$(ss -H -tnp state established 2>/dev/null)"}; do
+        cols=(${=row})
+        opeer="${cols[4]:-}"
+        oport="${opeer##*:}"
+        oip="${opeer%:*}"
+        oip="${oip#\[}"
+        oip="${oip%\]}"
+        oip="${oip#::ffff:}"
+        case "$oip" in
+            127.*|10.*|192.168.*|169.254.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|::1|[fF][eE]80:*|[fF][cCdD]*:*) continue ;;
+        esac
+        oprog="${${cols[5]:-}#*\"}"
+        oprog="${oprog%%\"*}"
+        oprog="${oprog:-?}"
+        (( ${out_progs[(Ie)$oprog]} )) || out_progs+=("$oprog")
+        out_ports[$oprog]="${out_ports[$oprog]:-} $oport"
+    done
+    if (( $#out_progs )); then
+        for oprog in ${(o)out_progs}; do
+            oports=(${=out_ports[$oprog]})
+            [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} %s  port(s) %s\n" "$oprog" "${(j:, :)${(@nou)oports}}"
+        done
+        [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}  A list to read: a program you do not recognise is worth a look. Other users' programs need root to be seen.${DD_RST}\n"
+    else
+        _dd_ok "no established connection to the outside from the processes you can see"
+    fi
+else
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- skipped: ss is not installed${DD_RST}\n"
+fi
+
+# --- Running processes -------------------------------------------------------
+_dd_head "Running processes"
+local -i seen=0
+local -a odd=()
+local -A deleted=()
+local p exe
+if [[ -d /proc/self ]]; then
+    for p in /proc/[0-9]*(N); do
+        exe=$(readlink "$p/exe" 2>/dev/null) || continue
+        seen+=1
+        case "$exe" in
+            /tmp/*|/dev/shm/*|/var/tmp/*)
+                odd+=("$exe")
+                _dd_fact proc-temp-folder "$exe" running
+                ;;
+            *" (deleted)")
+                deleted[${${exe% (deleted)}:t}]=1
+                ;;
+        esac
+    done
+    for name in ${(k)deleted}; do _dd_fact proc-replaced-on-disk "$name" running; done
+else
+    # No /proc (macOS): ps prints each executable's full path.
+    local -a comms=(${(f)"$(ps -axo comm= 2>/dev/null)"})
+    seen=$#comms
+    for exe in "${comms[@]}"; do
+        case "$exe" in
+            /tmp/*|/private/tmp/*|/var/tmp/*|/private/var/tmp/*|/dev/shm/*)
+                odd+=("$exe")
+                _dd_fact proc-temp-folder "$exe" running
+                ;;
+        esac
+    done
+fi
+if (( $#odd )); then
+    _dd_fail "running from a temporary folder (a common place for malware):"
+    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${odd[@]}"
+else
+    _dd_ok "none runs from a temporary folder ($seen processes checked)"
+fi
+if (( $#deleted )); then
+    _dd_warn "running from a file that was replaced on disk (usually an update; restart them): ${(j:, :)${(ok)deleted}}"
+fi
+
+# --- Input and capture devices (Linux only) ----------------------------------
+# A process holds a keyboard, mouse, camera or microphone open while it uses
+# it. Desktop plumbing may hold them; any other holder is worth a look.
+_dd_plumbing() {
+    # Process names are the kernel's comm, cut to 15 characters: xdg-desktop-portal
+    # shows as xdg-desktop-por, so both spellings are listed.
+    case "$1" in
+        Xorg|Xwayland|gnome-shell|mutter|systemd-logind|pipewire*|wireplumber|pulseaudio|gsd-*|ibus*) return 0 ;;
+        kwin_x11|kwin_wayland|plasmashell|sway|Hyprland|weston|gamescope) return 0 ;;
+        xdg-desktop-portal*|xdg-desktop-por) return 0 ;;
+    esac
+    return 1
+}
+
+# _dd_device <fact> <label> <name>...: one fact per holder. Plumbing is ok,
+# any other holder is a warning.
+_dd_device() {
+    local fact="$1" label="$2" n
+    local -a other=() plumb=()
+    shift 2
+    for n in "$@"; do
+        _dd_fact "$fact" "$n" held
+        if _dd_plumbing "$n"; then plumb+=("$n"); else other+=("$n"); fi
+    done
+    if (( $#other )); then
+        _dd_warn "$label held by: ${(j:, :)other} (not desktop plumbing: check each one)"
+    fi
+    if (( $#plumb )); then
+        _dd_ok "$label held by desktop plumbing: ${(j:, :)plumb}"
+    fi
+    if (( $#other + $#plumb == 0 )); then
+        _dd_ok "$label: no process holds one"
+    fi
+    return 0
+}
+
+_dd_head "Input and capture devices"
+if [[ "$DD_OS" == linux && -d /proc/self ]]; then
+    local pdir comm_name cmd target t key
+    local -i checked=0
+    local -a fds links found_tools=() held_input=() held_camera=() held_mic=()
+    for pdir in /proc/[0-9]*(N); do
+        comm_name=$(command cat -- "$pdir/comm" 2>/dev/null) || continue
+        checked+=1
+        comm_name=${comm_name:-?}
+        key=""
+        case "$comm_name" in
+            logkeys|keylogger|pynput|evtest) key="$comm_name" ;;
+            libinput)
+                cmd=$(tr '\0' ' ' < "$pdir/cmdline" 2>/dev/null)
+                if [[ "$cmd" == *"libinput debug-events"* ]]; then key="libinput debug-events"; fi
+                ;;
+        esac
+        if [[ -n "$key" ]] && (( ${found_tools[(Ie)$key]} == 0 )); then found_tools+=("$key"); fi
+        fds=("$pdir"/fd/*(N))
+        (( $#fds )) || continue
+        links=(${(f)"$(readlink -- "${fds[@]}" 2>/dev/null)"})
+        for target in "${links[@]}"; do
+            case "$target" in
+                /dev/input/event*|/dev/uinput|/dev/hidraw*)
+                    (( ${held_input[(Ie)$comm_name]} )) || held_input+=("$comm_name") ;;
+                /dev/video*)
+                    (( ${held_camera[(Ie)$comm_name]} )) || held_camera+=("$comm_name") ;;
+                /dev/snd/pcmC*D*c)
+                    (( ${held_mic[(Ie)$comm_name]} )) || held_mic+=("$comm_name") ;;
+            esac
+        done
+    done
+    _dd_device device-input "keyboard, mouse or input device" "${(@o)held_input}"
+    _dd_device device-camera "camera" "${(@o)held_camera}"
+    _dd_device device-mic "microphone" "${(@o)held_mic}"
+    for t in "${(@o)found_tools}"; do
+        _dd_fact capture-tool "$t" running
+        _dd_fail "known input-capture tool running: $t"
+    done
+    if (( $#found_tools == 0 )); then
+        _dd_ok "no known input-capture tool is running"
+    fi
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- read %d processes this user can see (others need root)${DD_RST}\n" "$checked"
+else
+    local why="macOS permission data needs Full Disk Access"
+    [[ "$DD_OS" == mac ]] || why="needs Linux /proc"
+    _dd_fact skipped capture-devices "$DD_OS"
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- skipped: %s${DD_RST}\n" "$why"
+fi
+
+# --- Setuid programs in places they should not be ----------------------------
+_dd_head "Setuid programs"
+local -a suid=() odd_suid=() suid_roots=() find_scope=()
+local f dir
+# GNU find stays on one filesystem with -xdev, BSD find with -x. Start dirs are
+# resolved first: /tmp and /var/tmp are symlinks on macOS.
+if find --version 2>/dev/null | command grep -q GNU; then
+    find_scope=(-xdev)
+else
+    find_scope=(-x)
+fi
+for dir in /tmp /var/tmp /usr/local /opt "$HOME/.local" "$HOME/bin"; do
+    suid_roots+=("${dir:A}")
+done
+suid=(${(f)"$(find "${find_scope[@]}" "${suid_roots[@]}" "${DD_TRASH_PRUNE[@]}" -perm -4000 -type f -print 2>/dev/null | LC_ALL=C sort)"})
+for f in "${suid[@]}"; do
+    [[ -n "$f" ]] || continue
+    # Chromium's sandbox helper is setuid by design.
+    [[ "$f" == */chrome-sandbox ]] && continue
+    _dd_fact setuid "$f" present
+    odd_suid+=("$f")
+done
+if (( $#odd_suid )); then
+    _dd_warn "setuid files (they run as their owner, usually root):"
+    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${odd_suid[@]}"
+else
+    _dd_ok "none in /tmp, /opt, /usr/local, ~/.local or ~/bin (Chromium sandbox ignored)"
+fi
+
+# --- Kernel (Linux only) -----------------------------------------------------
+_dd_head "Kernel"
+if [[ "$DD_OS" == linux && -r /proc/sys/kernel/tainted ]]; then
+    local taint why=""
+    taint=$(</proc/sys/kernel/tainted)
+    _dd_fact kernel taint "$taint"
+    if [[ "$taint" == 0 ]]; then
+        _dd_ok "not tainted"
+    else
+        (( taint & 1 ))    && why+=" proprietary-module"
+        (( taint & 4096 )) && why+=" out-of-tree-module"
+        (( taint & 8192 )) && why+=" unsigned-module"
+        _dd_warn "tainted ($taint):$why. Common with DKMS-built drivers, but check any module you did not install"
+    fi
+else
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- skipped: no kernel taint flags on %s${DD_RST}\n" "$DD_OS"
+fi
+
+# --- Package files (Linux with dpkg; slow, opt-in) ---------------------------
+_dd_head "Installed package files"
+if [[ "$DD_OS" != linux ]] || ! (( $+commands[dpkg] )); then
+    _dd_fact skipped package-files "not a dpkg system"
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- skipped: package verification here is for dpkg systems only${DD_RST}\n"
+elif [[ "$deep" != true ]]; then
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}- not run: dotdoctor scan --deep checks every package file (a minute or two)${DD_RST}\n"
+else
+    local -a verify=() changed_paths=()
+    local -i n_changed=0 n_missing=0
+    local -A missing_dirs=()
+    local l pkgfile dir3 seg
+    local -a segs
+    verify=(${(f)"$(dpkg -V 2>/dev/null)"})
+    for l in "${verify[@]}"; do
+        pkgfile="${l##* }"
+        if [[ "$l" == missing* ]]; then
+            n_missing+=1
+            segs=(${(s:/:)${pkgfile#/}})
+            segs=(${segs[1,-2]})
+            dir3="/${(j:/:)segs[1,3]}"
+            missing_dirs[$dir3]=$(( ${missing_dirs[$dir3]:-0} + 1 ))
+        elif [[ "$l" == ??5* && "$l" != *" c "* ]]; then
+            n_changed+=1
+            changed_paths+=("$pkgfile")
+            _dd_fact pkg-changed "$pkgfile" differs
+        fi
+    done
+    for dir3 in ${(k)missing_dirs}; do _dd_fact pkg-missing-folder "$dir3" "${missing_dirs[$dir3]}"; done
+    if (( n_changed > 0 )); then
+        _dd_fail "$n_changed installed file(s) differ from their package (contents changed):"
+        [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${(@)changed_paths[1,10]}"
+    else
+        _dd_ok "no installed package file has changed contents"
+    fi
+    if (( n_missing > 0 )); then
+        _dd_warn "$n_missing package file(s) are missing from disk; biggest folders:"
+        if [[ "$DD_QUIET" != true ]]; then
+            for dir3 in ${(k)missing_dirs}; do print -r -- "${missing_dirs[$dir3]} $dir3"; done | LC_ALL=C sort -rn | head -5 | sed 's/^/      /'
+        fi
+    else
+        _dd_ok "no package file is missing"
+    fi
+fi
+
+# --- Facts, baseline and diff ------------------------------------------------
+local state_dir="${DOTDOCTOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotdoctor}"
+local baseline="$state_dir/baseline.tsv"
+local fact_header="# dotdoctor-facts v1"
+
+case "$mode" in
+    facts)
+        print -r -- "$fact_header"
+        print -rl -- "${DD_FACTS[@]}" | LC_ALL=C sort
+        return 0
+        ;;
+    save)
+        # The new baseline is written beside the old one first, so a failed write
+        # keeps the old baseline. Then the old one is copied to .prev (kept) and
+        # the new one replaces it.
+        local tmp="$baseline.tmp" prev="$baseline.prev" kept=""
+        if ! ( umask 077; command mkdir -p "$state_dir" \
+              && { print -r -- "$fact_header"; print -rl -- "${DD_FACTS[@]}" | LC_ALL=C sort; } > "$tmp" ); then
+            command rm -f -- "$tmp"
+            echo "❌ baseline not saved: cannot write $tmp"
+            return 1
+        fi
+        if [[ -f "$baseline" ]]; then
+            if ! command cp -p -- "$baseline" "$prev"; then
+                command rm -f -- "$tmp"
+                echo "❌ baseline not saved: cannot keep the old baseline as $prev"
+                return 1
+            fi
+            kept=", previous kept as $prev"
+        fi
+        if ! command mv -f -- "$tmp" "$baseline"; then
+            echo "❌ baseline not saved: cannot replace $baseline"
+            return 1
+        fi
+        echo "✅ baseline saved: $baseline ($#DD_FACTS facts$kept)"
+        return 0
+        ;;
+    diff)
+        if [[ ! -f "$baseline" ]]; then
+            echo "❌ no baseline yet. Run: dotdoctor scan --save"
+            return 1
+        fi
+        local diff_out
+        diff_out=$(command diff <(command grep -v '^#' "$baseline" | LC_ALL=C sort) <(print -rl -- "${DD_FACTS[@]}" | LC_ALL=C sort))
+        [[ -f "$baseline.prev" ]] && echo "  The baseline from before the last --save is kept as $baseline.prev."
+        if [[ -z "$diff_out" ]]; then
+            echo "✅ identical to the baseline ($baseline)"
+            return 0
+        fi
+        echo "Changed since the baseline ($baseline):"
+        echo "  '<' was in the baseline and is gone, '>' is new"
+        print -r -- "$diff_out"
+        return 1
+        ;;
+esac
+
+# --- Summary -----------------------------------------------------------------
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+if (( DD_FAILS == 0 && DD_WARNS == 0 )); then
+    echo -e "${DD_GRN}  ✅ No indicators found by these checks${DD_RST}"
+elif (( DD_FAILS == 0 )); then
+    echo -e "${DD_YEL}  ⚠️  No failing checks; ${DD_WARNS} item(s) to review${DD_RST}"
+else
+    echo -e "${DD_RED}  ❌ ${DD_FAILS} failing check(s), ${DD_WARNS} item(s) to review${DD_RST}"
+fi
+echo -e "${DD_DIM}  These checks cannot prove a machine is clean. Keep it patched.${DD_RST}"
+echo -e "${DD_CYN}=================================================================${DD_RST}\n"
+
+return $(( DD_FAILS > 0 ))

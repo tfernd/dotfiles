@@ -1,0 +1,288 @@
+# ============================================================================
+# ⬆️ DOTDOCTOR UPDATE — what can be updated or removed, and the commands for it
+# ============================================================================
+#   dotdoctor update           inventory only: no changes, no network beyond the
+#                              package managers' own lookups
+#   dotdoctor update --apply   asks y/n/a/q (a letter, then Enter) before each step:
+#                              y runs it, n skips it, a runs it and the rest, q stops.
+#                              Steps that delete files always ask. sudo asks for your password.
+#   A step shows one line; its output goes to ~/.cache/dotdoctor/update.log.
+#   It also offers to bump the pins (update-versions.sh --apply) and, for tools
+#   behind their pin, to run install.sh --tools-only.
+# DOTDOCTOR_OFFLINE=1 skips the lookups that go to the network.
+# DD_APPLY_ALL=1 starts as if a was answered (dotdoctor check sets it when you type a).
+# ============================================================================
+
+dotdoctor-lib
+
+local apply=false
+case "${1:-}" in
+    "")      ;;
+    --apply) apply=true ;;
+    *)       echo "❌ Unknown option: $1"
+             echo "Usage: dotdoctor update [--apply]"
+             return 1 ;;
+esac
+[[ -n "${DD_APPLY_ALL:-}" ]] && DD_ASK_ALL=true
+local -a user_steps=() sudo_steps=() manual_steps=()
+local install_step=$(_dd_step "Install the pinned tools that are behind their pin" \
+    "bash ${(q)DOTFILES_DIR}/install.sh --tools-only" '✅ .* installed|❌|⏳|⚠️')
+
+local mode="inventory only"
+if [[ "$apply" == true && "$DD_ASK_ALL" == true ]]; then
+    mode="runs every step; deleting still asks"
+elif [[ "$apply" == true ]]; then
+    mode="asks y/n/a/q before each step"
+fi
+echo -e "\n${DD_CYN}=================================================================${DD_RST}"
+echo -e "${DD_CYN}  ⬆️ DOTDOCTOR UPDATE${DD_RST}   ${DD_YEL}${mode}${DD_RST}"
+echo -e "${DD_CYN}=================================================================${DD_RST}"
+
+# --- apt: Chrome, the rest of the system, old kernels ------------------------
+if (( $+commands[apt-get] )); then
+    _dd_head "System packages (apt)"
+    # apt writes its lists under /var/lib/apt/lists; the newest entry tells when it last refreshed.
+    # The partial/ directory counts: its mtime changes on every apt update, even when all repos say "Hit".
+    # A zsh glob, not ls: an ls alias from a human shell (eza) would leak into this function body.
+    local -a newest_list=(/var/lib/apt/lists/*(Nom[1]))
+    if (( ! $#newest_list )) || (( DD_NOW - $(stat -c %Y "${newest_list[1]}") > 7 * 86400 )); then
+        _dd_warn "the apt package list is more than a week old (or never refreshed)"
+    else
+        _dd_ok "the apt package list is recent"
+    fi
+    # -y: the step was confirmed here. confold keeps config files you edited and debconf takes
+    # its defaults: the output is hidden, so no question may wait for an answer.
+    sudo_steps+=("$(_dd_step "Upgrade the system packages (apt)" \
+        "sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get -y --with-new-pkgs -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold upgrade" \
+        '^[0-9]+ upgraded')")
+
+    local chrome_have chrome_want
+    chrome_have=$(dpkg-query -W -f='${Version}' google-chrome-stable 2>/dev/null)
+    if [[ -n "$chrome_have" ]]; then
+        chrome_want=$(apt-cache policy google-chrome-stable 2>/dev/null | awk '/Candidate:/{print $2}')
+        if [[ -n "$chrome_want" && "$chrome_want" != "$chrome_have" ]]; then
+            _dd_warn "Chrome $chrome_have, newer $chrome_want is available: sudo apt install --only-upgrade google-chrome-stable"
+        else
+            _dd_ok "Chrome $chrome_have (from Google's apt repo; the candidate matches)"
+        fi
+    else
+        _dd_warn "Chrome is not installed from apt: install it from https://www.google.com/chrome"
+    fi
+
+    # Old kernels, matched by ABI (6.8.0-40 of linux-image-6.8.0-40-generic): every kernel package
+    # whose ABI is neither the running one nor the newest image's. The newest may be waiting for a
+    # reboot. Pop!_OS ships a flavourless linux-headers-<abi>, and an earlier purge can leave it behind.
+    local running_kernel="$(uname -r)" running_abi img pkg abi newest_abi
+    local -a abis=() old_abis=() old_pkgs=()
+    running_abi="${running_kernel%%-[!0-9]*}"
+    for img in ${(f)"$(dpkg -l 'linux-image-[0-9]*' 2>/dev/null | awk '/^ii/{print $2}')"}; do
+        [[ -n "$img" ]] || continue
+        abi="${img#linux-image-}"
+        abis+=("${abi%%-[!0-9]*}")
+    done
+    newest_abi=$(print -rl -- "${abis[@]}" | sort -V | tail -1)
+    if (( $#abis )); then
+        for pkg in ${(f)"$(dpkg-query -W -f='${Package}\n' 2>/dev/null)"}; do
+            [[ "$pkg" =~ '^linux-.*-([0-9]+\.[0-9]+\.[0-9]+-[0-9]+)(-[a-z0-9]+)?$' ]] || continue
+            abi="$match[1]"
+            [[ "$abi" == "$running_abi" || "$abi" == "$newest_abi" ]] && continue
+            old_pkgs+=("$pkg")
+            (( ${old_abis[(Ie)$abi]} )) || old_abis+=("$abi")
+        done
+    fi
+    if (( $#old_pkgs )); then
+        _dd_warn "old kernels installed (running: $running_kernel): ${(j:, :)old_abis}"
+        manual_steps+=("$(_dd_step "Remove the old kernels (${(j:, :)old_abis})" "sudo apt purge ${(j: :)old_pkgs}" "" Av)")
+    else
+        _dd_ok "no old kernels beyond the running and the newest one"
+    fi
+fi
+
+# --- snap ---------------------------------------------------------------------
+if (( $+commands[snap] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    _dd_head "Snaps"
+    local snap_out
+    if ! snap_out=$(snap refresh --list 2>&1); then
+        _dd_warn "could not ask snapd (is it running?)"
+    elif [[ "$snap_out" == *'All snaps up to date'* ]]; then
+        _dd_ok "all snaps are up to date"
+    else
+        _dd_warn "snap updates are available"
+        sudo_steps+=("$(_dd_step "Refresh the snaps" "sudo snap refresh")")
+    fi
+fi
+
+# --- Flatpak -------------------------------------------------------------------
+if (( $+commands[flatpak] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    _dd_head "Flatpak"
+    local user_updates system_updates
+    user_updates=$(flatpak remote-ls --updates --user 2>/dev/null | sort -u | wc -l | tr -d ' ')
+    system_updates=$(flatpak remote-ls --updates --system 2>/dev/null | sort -u | wc -l | tr -d ' ')
+    if (( user_updates > 0 )); then
+        _dd_warn "$user_updates user-scope Flatpak update(s)"
+        user_steps+=("$(_dd_step "Update the Flatpak apps (user)" "flatpak update --user -y --noninteractive")")
+    else
+        _dd_ok "user-scope Flatpak apps are up to date"
+    fi
+    if (( system_updates > 0 )); then
+        _dd_warn "$system_updates system-scope Flatpak update(s)"
+        sudo_steps+=("$(_dd_step "Update the Flatpak apps (system)" "sudo flatpak update --system -y --noninteractive")")
+    else
+        _dd_ok "system-scope Flatpak apps are up to date"
+    fi
+    # Runtimes that no installed app uses. Old, unpatched runtimes often stay behind here.
+    manual_steps+=("$(_dd_step "Remove the Flatpak runtimes no app uses (user)" "flatpak uninstall --unused --user" "" Av)")
+    manual_steps+=("$(_dd_step "Remove the Flatpak runtimes no app uses (system)" "sudo flatpak uninstall --unused --system" "" Av)")
+fi
+
+# --- Developer tools -----------------------------------------------------------
+local bun_global="$HOME/.bun/install/global/package.json"
+if (( $+commands[uv] )) || { (( $+commands[bun] )) && [[ -r "$bun_global" ]]; } \
+    || { [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]] && (( $+commands[npm] || $+commands[brew] || $+commands[rustup] )); }; then
+    _dd_head "Developer tools"
+fi
+if (( $+commands[uv] )); then
+    _dd_ok "uv $(uv --version | awk '{print $2}') (pin in versions.toml: $(_dd_field uv version))"
+    if [[ -n "$(uv tool list 2>/dev/null | command grep -v 'No tools' )" ]]; then
+        user_steps+=("$(_dd_step "Upgrade the uv tools" "uv tool upgrade --all" '^(Updated|Upgraded|Nothing to upgrade)')")
+        _dd_ok "uv-managed tools will be upgraded with: uv tool upgrade --all"
+    fi
+fi
+if (( $+commands[rustup] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    local rust_out
+    rust_out=$(rustup check 2>&1)
+    if [[ "$rust_out" == *"Update available"* ]]; then
+        _dd_warn "Rust toolchain update available: ${(j:; :)${(M)${(f)rust_out}:#*Update available*}}"
+        user_steps+=("$(_dd_step "Update the Rust toolchain" "rustup update" 'updated|unchanged')")
+    elif [[ "$rust_out" == *"Up to date"* ]]; then
+        _dd_ok "Rust toolchains are up to date"
+    else
+        _dd_warn "could not ask rustup (offline?)"
+    fi
+fi
+# Offered only when this bun has the flag; an older one would fail the step on every run.
+if (( $+commands[bun] )) && [[ -r "$bun_global" ]] && bun update --help 2>&1 | command grep -q -- '--global'; then
+    user_steps+=("$(_dd_step "Update the bun global packages" "bun update --global")")
+    _dd_ok "bun global packages will be updated with: bun update --global"
+fi
+if (( $+commands[npm] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    local npm_root
+    local -a npm_rows=(${(f)"$(npm outdated -g 2>/dev/null | awk 'NR>1{print $1, $2, $4}')"})
+    local -a npm_self=(${=${(M)npm_rows:#npm *}})
+    if (( $#npm_self )); then
+        npm_root=$(npm root -g 2>/dev/null)
+        if [[ -n "$npm_root" && -w "$npm_root" ]]; then
+            user_steps+=("$(_dd_step "Upgrade npm to $npm_self[3] (check that your Node supports it)" "npm install -g npm@latest")")
+        else
+            # NodeSource and distro Node put npm in /usr/lib/node_modules, owned by the nodejs
+            # package: npm cannot write there without root, and apt replaces it with Node.
+            npm_rows=(${npm_rows:#npm *})
+            printf "  ${DD_DIM}- npm %s (latest %s) came with Node in %s: it updates with Node, not here${DD_RST}\n" \
+                "$npm_self[2]" "$npm_self[3]" "${npm_root:-a root-owned folder}"
+        fi
+    fi
+    if (( $#npm_rows )); then
+        _dd_warn "global npm packages out of date (name, current, latest): ${(j:; :)npm_rows}"
+    else
+        _dd_ok "global npm packages are up to date"
+    fi
+fi
+if (( $+commands[brew] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    local brew_out
+    brew_out=$(HOMEBREW_NO_AUTO_UPDATE=1 brew outdated --quiet 2>/dev/null | wc -l | tr -d ' ')
+    if (( brew_out > 0 )); then
+        _dd_warn "$brew_out Homebrew formula(e) out of date"
+        user_steps+=("$(_dd_step "Upgrade the Homebrew formulae" "brew update && brew upgrade" '==> Upgrading')")
+    else
+        _dd_ok "Homebrew formulae are up to date"
+    fi
+fi
+
+# --- Firmware (fwupd) ---------------------------------------------------------
+if (( $+commands[fwupdmgr] )) && [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 ]]; then
+    _dd_head "Firmware (fwupd)"
+    local -a fw_timeout=()
+    (( $+commands[timeout] )) && fw_timeout=(timeout 30)
+    # get-updates reads the metadata fwupd already has (the step below refreshes it first).
+    # Exit status 0 means it listed an update; any other status means none, or fwupd could not be asked.
+    if "${fw_timeout[@]}" fwupdmgr get-updates </dev/null >/dev/null 2>&1; then
+        _dd_warn "firmware updates are available (fwupd asks before installing each one)"
+        sudo_steps+=("$(_dd_step "Install the firmware updates (fwupd asks about each one)" "sudo fwupdmgr refresh; sudo fwupdmgr update" "" Av)")
+    else
+        _dd_ok "no firmware update in fwupd's current metadata"
+    fi
+fi
+
+# --- Pinned tools and advisories: the full picture is in check ----------------
+_dd_head "Pinned tools and advisories"
+if [[ "${DOTDOCTOR_OFFLINE:-0}" != 1 && -f "$DOTFILES_DIR/update-versions.sh" ]]; then
+    user_steps+=("$(_dd_step "Bump the pins to releases ${DD_QUARANTINE_DAYS}+ days old (asks GitHub)" \
+        "bash ${(q)DOTFILES_DIR}/update-versions.sh --apply" 'Updated .* -> v|Added .* -> v|Found [0-9]+ tool|latest safe versions')")
+fi
+_dd_drift
+if (( $#DD_DRIFT )); then
+    _dd_warn "behind their pin or not installed: ${(j:, :)DD_DRIFT}"
+else
+    _dd_ok "every pinned tool is at or above its pin"
+fi
+[[ -n "${DD_FROM_CHECK:-}" ]] || printf "  ${DD_DIM}- run: dotdoctor check   (pins vs installed, and CVE fixes still in quarantine)${DD_RST}\n"
+
+# --- Plan ----------------------------------------------------------------------
+# --apply shows the titles; the commands are in the log. The inventory shows both, to copy.
+local with_cmds=true
+[[ "$apply" == true ]] && with_cmds=false
+local -a user_shown=("${user_steps[@]}")
+(( $#DD_DRIFT )) && user_shown+=("$install_step")
+echo -e "\n${DD_CYN}▸ Commands to run${DD_RST}"
+if (( $#user_shown )); then
+    echo "  No root needed:"
+    _dd_show_steps "$with_cmds" "${user_shown[@]}"
+fi
+if (( $#sudo_steps )); then
+    echo "  Need your password (sudo asks for it):"
+    _dd_show_steps "$with_cmds" "${sudo_steps[@]}"
+fi
+if (( $#manual_steps )); then
+    echo "  Deletes files (--apply asks for each one, even after a):"
+    _dd_show_steps true "${manual_steps[@]}"
+fi
+if (( ! $#user_shown && ! $#sudo_steps && ! $#manual_steps )); then
+    echo "  Nothing to run."
+fi
+
+if [[ "$apply" == true ]] && (( $#user_shown + $#sudo_steps + $#manual_steps )); then
+    if [[ ! -t 0 ]]; then
+        echo "❌ --apply needs an interactive terminal (it asks first)"
+        return 1
+    fi
+    (umask 077; command mkdir -p "${DD_LOG:h}" && : > "$DD_LOG")
+    if [[ "$DD_ASK_ALL" == true ]]; then
+        echo -e "\n${DD_CYN}▸ Apply${DD_RST}   every step runs; steps that delete files still ask (a letter, then Enter)"
+    else
+        echo -e "\n${DD_CYN}▸ Apply${DD_RST}   a letter, then Enter.   y: run it   n: skip it   a: run it and the rest   q: stop"
+    fi
+    printf "  ${DD_DIM}The output goes to %s${DD_RST}\n" "${DD_LOG/#$HOME/~}"
+    local step stop=false
+    for step in "${user_steps[@]}"; do
+        _dd_apply_step "$step" || { stop=true; break; }
+    done
+    # Asked after the pin bump, which can leave tools behind their new pin.
+    if [[ "$stop" == false ]]; then
+        _dd_drift
+        if (( $#DD_DRIFT )); then
+            _dd_apply_step "$install_step" "" " (${(j:, :)DD_DRIFT})" || stop=true
+        fi
+    fi
+    if [[ "$stop" == false ]]; then
+        for step in "${sudo_steps[@]}"; do
+            _dd_apply_step "$step" || { stop=true; break; }
+        done
+    fi
+    if [[ "$stop" == false ]]; then
+        for step in "${manual_steps[@]}"; do
+            _dd_apply_step "$step" "(deletes files) " || break
+        done
+    fi
+fi
+
+return $(( DD_FAILS > 0 ))

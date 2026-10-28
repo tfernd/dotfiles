@@ -1,0 +1,40 @@
+# dotdoctor-osv: asks OSV.dev about each [osv] tool at its installed version.
+# Needs dotdoctor-lib already loaded (dotdoctor check does this). Do not reload it
+# here: that resets the counters. Sends only the package name, ecosystem and version.
+(( $+commands[curl] && $+commands[jq] )) || { _dd_warn "curl or jq is missing: advisories skipped"; return 0; }
+local name spec eco pkg ver body resp row id sev fixed summary msg aliases a
+local -a seen
+for name in ${(f)"$(command sed -n '/^\[osv\]/,/^\[/p' "$DD_TOML" | command grep -E '^[a-z]' | sed -E 's/ *=.*//')"}; do
+    spec=$(sed -nE "s/^$name *= *\"([^\"]*)\".*/\1/p" "$DD_TOML")
+    eco=${spec%%:*}
+    pkg=${spec#*:}
+    ver=$(_dd_version "$name")
+    if [[ -z "$ver" ]]; then
+        _dd_warn "$name: version could not be read, no advisory lookup"
+        continue
+    fi
+    body=$(jq -nc --arg n "$pkg" --arg e "$eco" --arg v "$ver" '{version: $v, package: {name: $n, ecosystem: $e}}')
+    resp=$(curl -fsS --max-time 15 -H 'Content-Type: application/json' -d "$body" https://api.osv.dev/v1/query 2>/dev/null) || {
+        _dd_warn "$name $ver: OSV.dev not reachable, no advisory lookup"
+        continue
+    }
+    row=$(print -r -- "$resp" | jq -r --arg n "$pkg" '.vulns[]? | select(.withdrawn == null) | [.id, ((.aliases // []) | join(" ")), ((.database_specific.severity // "UNKNOWN") | ascii_upcase), ([.affected[]? | select(.package.name == $n) | .ranges[]?.events[]?.fixed // empty] | unique | if length == 0 then "none listed" else join(" ") end), (.summary // "")] | @tsv')
+    if [[ -z "$row" ]]; then
+        _dd_ok "$name $ver: no known advisory (OSV.dev $eco:$pkg)"
+        continue
+    fi
+    seen=()
+    while IFS=$'\t' read -r id aliases sev fixed summary; do
+        [[ -n "$id" ]] || continue
+        (( ${seen[(Ie)$id]} )) && continue
+        seen+=("$id")
+        for a in ${=aliases}; do seen+=("$a"); done
+        _dd_fact advisory "osv:$name" "$id"
+        msg="$name $ver: $id ($sev) $summary; fixed in $fixed"
+        if [[ "$sev" == HIGH || "$sev" == CRITICAL ]]; then
+            _dd_fail "$msg"
+        else
+            _dd_warn "$msg"
+        fi
+    done <<< "$row"
+done

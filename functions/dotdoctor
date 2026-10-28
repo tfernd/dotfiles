@@ -1,0 +1,26 @@
+# ============================================================================
+# 🩺 DOTDOCTOR — outdated pins, known advisories, local indicators
+# ============================================================================
+#   dotdoctor                    same as: dotdoctor check
+#   dotdoctor check              pinned versions + advisories (no network)
+#   dotdoctor check --latest     also ask GitHub for releases past the quarantine
+#   dotdoctor check --advisories  ask OSV.dev about the [osv] tools (network)
+#   dotdoctor scan               local indicators of compromise (no network, no sudo)
+#   dotdoctor scan --deep        also verify every installed package file (slow)
+# ============================================================================
+
+local sub="${1:-check}"
+(( $# > 0 )) && shift
+
+case "$sub" in
+    check)          dotdoctor-check "$@" ;;
+    scan)           dotdoctor-scan "$@" ;;
+    update)         dotdoctor-update "$@" ;;
+    clean)          dotdoctor-clean "$@" ;;
+    -h|--help|help) echo "Usage: dotdoctor [check [--latest] [--advisories] | scan [--deep] | update [--apply] | clean [--apply]]" ;;
+    *)
+        echo "❌ Unknown subcommand: $sub"
+        echo "Usage: dotdoctor [check [--latest] [--advisories] | scan [--deep] | update [--apply] | clean [--apply]]"
+        return 1
+        ;;
+esac

@@ -1,0 +1,386 @@
+# ============================================================================
+# 🧰 DOTDOCTOR HELPERS (used by dotdoctor-check and dotdoctor-scan)
+# ============================================================================
+# Call this first. It sets the colours (none when piped or in agent shells;
+# DD_COLOR=1 keeps them when piped),
+# the counters, the fact list and the _dd_* helpers.
+# DD_QUIET=true silences the report (the facts are still recorded).
+# DOTDOCTOR_NOW=<epoch> overrides "now" (the test suite uses it).
+# DOTDOCTOR_PY_ROOTS=<folders> sets where the Python brotli search looks
+# (space-separated absolute paths, default $HOME).
+# ============================================================================
+
+if [[ ( -t 1 || -n "${DD_COLOR:-}" ) && "${IS_AGENT:-false}" != "true" ]]; then
+    typeset -g DD_RED=$'\033[1;31m' DD_GRN=$'\033[1;32m' DD_YEL=$'\033[1;33m'
+    typeset -g DD_CYN=$'\033[1;36m' DD_DIM=$'\033[38;5;244m' DD_RST=$'\033[0m'
+else
+    typeset -g DD_RED="" DD_GRN="" DD_YEL="" DD_CYN="" DD_DIM="" DD_RST=""
+fi
+case "$OSTYPE" in
+    linux*)  typeset -g DD_OS=linux ;;
+    darwin*) typeset -g DD_OS=mac ;;
+    *)       typeset -g DD_OS=other ;;
+esac
+typeset -g DD_TOML="$DOTFILES_DIR/versions.toml"
+typeset -g DD_NOW="${DOTDOCTOR_NOW:-$(date +%s)}"
+typeset -g DD_QUIET=false
+typeset -gi DD_FAILS=0 DD_WARNS=0
+# The quarantine window in days: one number in <repo>/.freshness. Empty when the file is missing.
+typeset -g DD_QUARANTINE_DAYS=""
+[[ -r "$DOTFILES_DIR/.freshness" ]] && DD_QUARANTINE_DAYS="${$(<"$DOTFILES_DIR/.freshness")//[^0-9]/}"
+typeset -g DD_ASK_ALL=false
+typeset -g DD_LOG="${XDG_CACHE_HOME:-$HOME/.cache}/dotdoctor/update.log"
+typeset -ga DD_FACTS=()
+typeset -ga DD_PIN_MSGS=()
+# Trashed copies are not installed. Every find in check, clean and scan prunes
+# the XDG Trash and the macOS ~/.Trash (_dd_in_trash does the same for globs).
+typeset -ga DD_TRASH_PRUNE=(\( -path "$HOME/.local/share/Trash" -o -path "$HOME/.Trash" \) -prune -o)
+
+_dd_ok()   { [[ "$DD_QUIET" == true ]] || printf "  ${DD_GRN}✓${DD_RST} %s\n" "$*"; }
+_dd_warn() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_YEL}!${DD_RST} %s\n" "$*"; (( DD_WARNS += 1 )); }
+_dd_fail() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_RED}✗${DD_RST} %s\n" "$*"; (( DD_FAILS += 1 )); }
+_dd_head() { [[ "$DD_QUIET" == true ]] || printf "\n${DD_CYN}▸ %s${DD_RST}\n" "$*"; }
+
+# _dd_fact <category> <key> <value>: one stable line for the facts list.
+# Keep PIDs, timestamps and anything that changes by itself out of facts.
+# The home folder is written as ~, so a baseline means the same on any account.
+_dd_fact() {
+    # Keys can be paths too (setuid files, rc hooks, launchd plists): both are shortened.
+    local key="${2/#$HOME/~}"
+    local value="${3/#$HOME/~}"
+    # A tab or line break would split the TSV fact into more than three fields.
+    key=${key//[$'\t\n\r']/ }
+    value=${value//[$'\t\n\r']/ }
+    DD_FACTS+=("$1"$'\t'"$key"$'\t'"$value")
+}
+
+# _dd_field <key> <field>: one quoted value from versions.toml, e.g. _dd_field bun version
+# Prints nothing when the key or the field is missing.
+_dd_field() {
+    command grep -E "^$1 *=" "$DD_TOML" | head -1 | sed -nE "s/.*$2 = \"([^\"]*)\".*/\1/p"
+}
+
+# _dd_in_trash <path>: true (status 0) when the path is inside a trash folder.
+_dd_in_trash() {
+    case "$1" in
+        "$HOME/.local/share/Trash"|"$HOME/.local/share/Trash/"*|"$HOME/.Trash"|"$HOME/.Trash/"*) return 0 ;;
+    esac
+    return 1
+}
+
+# _dd_py_dists: the brotli-*.dist-info folders (Python packages) under
+# DOTDOCTOR_PY_ROOTS (space-separated, default $HOME), at most 10 levels deep
+# (uv tools sit at depth 9 under $HOME). Caches, node_modules, git data and trash
+# are pruned to keep the search fast.
+_dd_py_dists() {
+    local -a roots=(${=DOTDOCTOR_PY_ROOTS:-$HOME})
+    (( $#roots )) || return 0
+    command find "${roots[@]}" -maxdepth 10 "${DD_TRASH_PRUNE[@]}" \
+        \( -name .cache -o -name node_modules -o -name .git -o -name Trash -o -name .Trash \) -prune -o \
+        -type d -name 'brotli-*.dist-info' -path '*site-packages*' -print 2>/dev/null | command sort -u
+}
+
+# Dates: GNU date first, then BSD/macOS date.
+_dd_epoch() { date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null; }
+_dd_day()   { date -d "@$1" +%F 2>/dev/null || date -r "$1" +%F; }
+
+# _dd_quarantine_end <YYYY-MM-DD>: the day a release from that date leaves quarantine.
+# Calendar days, not 86400-second steps: those drift by an hour across DST changes.
+_dd_quarantine_end() {
+    date -d "$1 + $DD_QUARANTINE_DAYS days" +%F 2>/dev/null \
+        || date -j -v+"${DD_QUARANTINE_DAYS}"d -f "%Y-%m-%d" "$1" +%F
+}
+
+# _dd_version <command>: the first x.y.z printed by "<command> --version"
+_dd_version() {
+    (( $+commands[$1] )) || return 1
+    "$1" --version 2>/dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+
+# _dd_line <version>: the release line, its first two components
+# (1.2.1.0 -> 1.2, 22.12.0 -> 22.12, 22 -> 22)
+_dd_line() {
+    local -a parts=(${(s:.:)1})
+    if (( $#parts >= 2 )); then
+        print -r -- "${parts[1]}.${parts[2]}"
+    else
+        print -r -- "${parts[1]}"
+    fi
+}
+
+# _dd_advisory <label> <key> <installed> [note]
+# Compares one installed version with the fixed releases in versions.toml [fixes].
+# A fix counts only on the same release line (the first two components).
+# With no fix on that line: inside the "affected" range (inclusive, sort -V) it
+# fails; outside it, or with no range, it only warns.
+_dd_advisory() {
+    local label="$1" key="$2" installed="$3" note="${4:-}"
+    if [[ -z "$installed" ]]; then
+        [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} %s  not installed here\n" "$label"
+        return 0
+    fi
+    local cve fixed released affected line low high i
+    local -a fx rd ar
+    cve=$(_dd_field "$key" cve)
+    fixed=$(_dd_field "$key" fixed)
+    released=$(_dd_field "$key" released)
+    affected=$(_dd_field "$key" affected)
+    _dd_fact advisory "$key" "$installed"
+    if [[ -z "$fixed" ]]; then
+        _dd_warn "$label $installed  no advisory data for $key"
+        return 0
+    fi
+    fx=(${=fixed})
+    rd=(${=released})
+    line=$(_dd_line "$installed")
+    for (( i = 1; i <= $#fx; i++ )); do
+        [[ "$(_dd_line "${fx[i]}")" == "$line" ]] || continue
+        if [[ "$(print -l "${fx[i]}" "$installed" | sort -V | tail -1)" == "$installed" ]]; then
+            _dd_ok "$label $installed  fixed ($cve, fixed in ${fx[i]})"
+        else
+            local ends
+            ends=$(_dd_quarantine_end "${rd[i]}")
+            if [[ "$(_dd_day "$DD_NOW")" < "$ends" ]]; then
+                _dd_fail "$label $installed  affected by $cve; fix ${fx[i]} is quarantined until $ends  $note"
+            else
+                _dd_fail "$label $installed  affected by $cve: upgrade to ${fx[i]}  $note"
+            fi
+        fi
+        return 0
+    done
+    ar=(${=affected})
+    low="${ar[1]}"
+    high="${ar[2]}"
+    if [[ -n "$low" && -n "$high" ]] \
+        && [[ "$(print -l "$low" "$installed" | sort -V | head -1)" == "$low" ]] \
+        && [[ "$(print -l "$installed" "$high" | sort -V | head -1)" == "$installed" ]]; then
+        _dd_fail "$label $installed  affected; no fix on the $line line: move to a fixed line: $fixed  ($cve) $note"
+        return 0
+    fi
+    _dd_warn "$label $installed  no fix listed for release line $line ($cve): check the advisory  $note"
+}
+
+# _dd_changelog_cite <changelog.gz> <cve>: the first bullet line (" * " or " - ")
+# of a Debian changelog that names the CVE id, trimmed. Prints nothing when there
+# is no such line, no CVE id or no file. A mention outside a bullet does not count.
+_dd_changelog_cite() {
+    [[ -n "$2" ]] || return 0
+    command zgrep -E "^ +(\* |- ).*$2([^0-9]|\$)" "$1" 2>/dev/null | command head -1 \
+        | command sed -E 's/^ +//; s/ +$//'
+}
+
+# _dd_runnable <file>: true when you own the file (symlinks are followed) and no
+# one else can write it, so running it is safe.
+_dd_runnable() {
+    local real="${1:A}"
+    [[ -f "$real" && -O "$real" ]] || return 1
+    [[ -z "$(command find "$real" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]]
+}
+
+# _dd_runtime_version <file> <name>: the x.y.z of a Node or Bun copy (name is node
+# or bun). The copy runs only when _dd_runnable allows it, under timeout 5 when
+# that exists. Otherwise the version comes from the folder name (node-v22.12.0-
+# linux-x64). Prints nothing when that gives no version either: the caller then
+# asks _dd_metadata_version.
+_dd_runtime_version() {
+    local real="${1:A}" ver=""
+    if _dd_runnable "$real"; then
+        if whence -p timeout >/dev/null 2>&1; then
+            ver=$(command timeout 5 "$real" --version 2>/dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command head -1)
+        else
+            ver=$("$real" --version 2>/dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command head -1)
+        fi
+    else
+        ver=$(print -r -- "$real" | command grep -oE "$2-v[0-9]+\.[0-9]+\.[0-9]+" | command head -1 \
+            | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    fi
+    print -r -- "$ver"
+}
+
+# _dd_metadata_version <file> <name>: the x.y.z of a Node copy from the package
+# metadata beside it. The copy is never run, only its path and folder names are
+# read. Only a uv tool's nodejs_wheel/bin/node has such metadata: the single
+# nodejs_wheel_binaries-<ver>.dist-info folder in the same site-packages. Prints
+# nothing when there is not exactly one.
+_dd_metadata_version() {
+    local real="${1:A}" ver
+    local -a metas=()
+    [[ "$2" == node && "$real" == */site-packages/nodejs_wheel/bin/node ]] || return 0
+    metas=("${real:h:h:h}"/nodejs_wheel_binaries-*.dist-info(N/))
+    (( $#metas == 1 )) || return 0
+    ver=${${metas[1]:t}#nodejs_wheel_binaries-}
+    ver=${ver%.dist-info}
+    [[ "$ver" == <->.<->.<-> ]] && print -r -- "$ver"
+    return 0
+}
+
+# _dd_pin_advisories <tool> <pinned>: sets DD_PIN_MSGS to one failure message for
+# each [fixes] advisory whose key starts with "<tool>-" and that covers the pinned
+# version. A fix on the pin's own release line decides first: a pin at or above it
+# is safe. Without one, the "affected" range decides (inclusive, sort -V). The fix
+# named is the one on that line, else the first one above the pin, and the date is
+# the day that fix leaves quarantine. Prints nothing itself: the caller shows it.
+_dd_pin_advisories() {
+    local tool="$1" pinned="$2" key cve fixed released affected line low high ends day i k
+    local -a keys fx rd ar
+    DD_PIN_MSGS=()
+    keys=(${(f)"$(command sed -n '/^\[fixes\]/,/^\[/p' "$DD_TOML" | command grep -E "^$tool-[A-Za-z0-9_.-]+ *=" | command sed -E 's/ *=.*//')"})
+    line=$(_dd_line "$pinned")
+    day=$(_dd_day "$DD_NOW")
+    for key in "${keys[@]}"; do
+        [[ -n "$key" ]] || continue
+        fixed=$(_dd_field "$key" fixed)
+        [[ -n "$fixed" ]] || continue
+        cve=$(_dd_field "$key" cve)
+        released=$(_dd_field "$key" released)
+        affected=$(_dd_field "$key" affected)
+        fx=(${=fixed})
+        rd=(${=released})
+        i=0
+        for (( k = 1; k <= $#fx; k++ )); do
+            if [[ "$(_dd_line "${fx[k]}")" == "$line" ]]; then i=$k; break; fi
+        done
+        if (( i > 0 )); then
+            # At or above the fix on its own release line: not affected.
+            [[ "$(print -l "${fx[i]}" "$pinned" | command sort -V | command tail -1)" == "$pinned" ]] && continue
+        else
+            ar=(${=affected})
+            low="${ar[1]}"
+            high="${ar[2]}"
+            [[ -n "$low" && -n "$high" ]] || continue
+            [[ "$(print -l "$low" "$pinned" | command sort -V | command head -1)" == "$low" ]] || continue
+            [[ "$(print -l "$pinned" "$high" | command sort -V | command head -1)" == "$pinned" ]] || continue
+            i=$#fx
+            for (( k = 1; k <= $#fx; k++ )); do
+                if [[ "${fx[k]}" != "$pinned" && "$(print -l "$pinned" "${fx[k]}" | command sort -V | command tail -1)" == "${fx[k]}" ]]; then
+                    i=$k
+                    break
+                fi
+            done
+        fi
+        ends=""
+        [[ -n "${rd[i]:-}" ]] && ends=$(_dd_quarantine_end "${rd[i]}")
+        if [[ -z "$ends" ]]; then
+            DD_PIN_MSGS+=("the pin $pinned is affected by $cve: bump it to ${fx[i]}")
+        elif [[ "$day" < "$ends" ]]; then
+            DD_PIN_MSGS+=("the pin $pinned is affected by $cve: bump it to ${fx[i]} when its quarantine ends ($ends)")
+        else
+            DD_PIN_MSGS+=("the pin $pinned is affected by $cve: bump it to ${fx[i]} now (its quarantine ended $ends)")
+        fi
+    done
+}
+
+# _dd_ask <question> [always]: reads a line: y, n, a or q, then Enter (Enter alone is n).
+# Sets REPLY to y or n; returns 1 on q or end of input. a answers y to the later questions
+# not marked always. A line, not one key: the Enter typed after the key stayed queued and
+# the next program's prompt read it (apt takes an empty answer as yes).
+_dd_ask() {
+    if [[ "$DD_ASK_ALL" == true && "$2" != always ]]; then
+        REPLY=y
+        return 0
+    fi
+    local key=""
+    print -rn -- "$1 [y/n/a/q] "
+    read -r key || [[ -n "$key" ]] || { echo; return 1; }
+    case "$key" in
+        [yY]*) REPLY=y ;;
+        [aA]*) REPLY=y; DD_ASK_ALL=true ;;
+        [qQ]*) REPLY=n; return 1 ;;
+        *)     REPLY=n ;;
+    esac
+}
+
+# A planned step is "title<TAB>command<TAB>pattern<TAB>flags". The pattern picks the output lines
+# worth showing after the command succeeds. Flags: A asks every time, even after "a" (deleting,
+# firmware); v keeps the output on the terminal, for commands that ask their own questions.
+_dd_step() { print -r -- "$1"$'\t'"$2"$'\t'"${3:-}"$'\t'"${4:-}"; }
+
+# _dd_show_steps <with-commands> <step>...: the plan by title; true adds each command below it.
+_dd_show_steps() {
+    local with="$1" step
+    shift
+    for step in "$@"; do
+        print -r -- "    ${step%%$'\t'*}"
+        [[ "$with" == true ]] && printf "      ${DD_DIM}%s${DD_RST}\n" "${${step#*$'\t'}%%$'\t'*}"
+    done
+}
+
+# _dd_run_step <step>: runs one step. Its output goes to DD_LOG; one line shows the result, plus
+# the lines matching the step's pattern. A failure shows the step's last lines and the log path.
+# Hidden steps get no stdin, so a question nobody sees fails the step instead of hanging it. A step
+# with the v flag keeps its output on the terminal, for commands that ask their own questions.
+_dd_run_step() {
+    local -a f=("${(@ps:\t:)1}")
+    local title="$f[1]" cmd="$f[2]" pat="$f[3]" start
+    if [[ "$f[4]" == *v* ]]; then
+        printf "${DD_CYN}▸ %s${DD_RST}\n" "$title"
+        eval "$cmd" || _dd_fail "failed: $title"
+        return
+    fi
+    # sudo asks for the password on the terminal now, not in the middle of hidden output.
+    if [[ " $cmd " == *" sudo "* ]] && ! command sudo -n true 2>/dev/null; then
+        command sudo -v || { _dd_fail "skipped, sudo refused: $title"; return; }
+    fi
+    [[ -f "$DD_LOG" ]] || (umask 077; command mkdir -p "${DD_LOG:h}" && : >> "$DD_LOG")
+    print -r -- "=== $title: $cmd" >> "$DD_LOG"
+    start=$(( $(command wc -l < "$DD_LOG") + 1 ))
+    printf "  %s … " "$title"
+    if eval "$cmd" </dev/null >> "$DD_LOG" 2>&1; then
+        printf "${DD_GRN}✓${DD_RST}\n"
+        [[ -n "$pat" ]] && command tail -n "+$start" "$DD_LOG" | command sed $'s/\033\\[[0-9;]*m//g' | command grep -E -- "$pat" | command sed -E 's/^[[:space:]]*/      /'
+    else
+        printf "${DD_RED}✗ failed${DD_RST}\n"
+        command tail -n "+$start" "$DD_LOG" | command sed $'s/\033\\[[0-9;]*m//g' | command tail -n 12 | command sed 's/^/      /'
+        printf "      ${DD_DIM}full log: %s${DD_RST}\n" "${DD_LOG/#$HOME/~}"
+        (( DD_FAILS += 1 ))
+    fi
+}
+
+# _dd_apply_step <step> [prefix] [suffix]: asks about one planned step, then runs it. A step with
+# the A flag shows its command in the question and asks even after a. Returns 1 when the answer is q.
+_dd_apply_step() {
+    local -a f=("${(@ps:\t:)1}")
+    local label="$2$f[1]" mode=""
+    if [[ "$f[4]" == *A* ]]; then
+        mode=always
+        label+=": $f[2]"
+    fi
+    _dd_ask "$label$3" $mode || return 1
+    [[ "$REPLY" == y ]] && _dd_run_step "$1"
+    return 0
+}
+
+# _dd_pinned_tools: the names in versions.toml [tools], one per line. Parsed in zsh like _dd_drift.
+_dd_pinned_tools() {
+    [[ -r "$DD_TOML" ]] || return 0
+    local line sect=""
+    for line in "${(@f)$(<"$DD_TOML")}"; do
+        if [[ "$line" == \[*\] ]]; then
+            sect="$line"
+            continue
+        fi
+        [[ "$sect" == "[tools]" && "$line" =~ '^([a-z0-9_-]+) *= *\{' ]] && print -r -- "$match[1]"
+    done
+    return 0
+}
+
+# _dd_drift: sets DD_DRIFT to the [tools] that are missing or older than their pin.
+# Parsed in zsh: the update tests run it with a PATH that has no grep.
+_dd_drift() {
+    typeset -ga DD_DRIFT=()
+    [[ -r "$DD_TOML" ]] || return 0
+    local line sect="" tool pin have
+    for line in "${(@f)$(<"$DD_TOML")}"; do
+        if [[ "$line" == \[*\] ]]; then
+            sect="$line"
+            continue
+        fi
+        [[ "$sect" == "[tools]" && "$line" =~ '^([a-z0-9_-]+) *= *\{ *version *= *"([^"]+)"' ]] || continue
+        tool="$match[1]"; pin="$match[2]"
+        have=$(_dd_version "$tool")
+        [[ -z "$have" && "$tool" == bat ]] && have=$(_dd_version batcat)
+        if [[ -z "$have" ]] || [[ "$have" != "$pin" && "$(print -rl -- "$pin" "$have" | command sort -V | command tail -n 1)" == "$pin" ]]; then
+            DD_DRIFT+=("$tool")
+        fi
+    done
+}
