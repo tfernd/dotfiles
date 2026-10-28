@@ -2,14 +2,15 @@
 # ============================================================================
 # 🔄 UPDATE VERSIONS SCRIPT
 # Checks upstream GitHub releases for each tool in versions.toml
-# Enforces the 14-day supply-chain quarantine rule: age_days >= 14
+# Enforces the supply-chain quarantine: age_days >= the number of days in .freshness
 # ============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERSIONS_FILE="$SCRIPT_DIR/versions.toml"
-MIN_AGE_DAYS=14
+MIN_AGE_DAYS=$(tr -dc '0-9' 2>/dev/null < "$SCRIPT_DIR/.freshness" || true)
+[[ -n "$MIN_AGE_DAYS" ]] || { echo "❌ $SCRIPT_DIR/.freshness is missing or holds no number of days"; exit 1; }
 APPLY=false
 
 # Parse flags
@@ -37,13 +38,21 @@ declare -A REPOS=(
     ["delta"]="dandavison/delta"
     ["eza"]="eza-community/eza"
     ["gh"]="cli/cli"
-    ["git"]="git/git"
     ["starship"]="starship/starship"
     ["uv"]="astral-sh/uv"
     ["xh"]="ducaale/xh"
     ["yq"]="mikefarah/yq"
     ["zellij"]="zellij-org/zellij"
     ["zoxide"]="ajeetdsouza/zoxide"
+    ["terraform"]="hashicorp/terraform"
+    ["terraform-ls"]="hashicorp/terraform-ls"
+    ["rg"]="BurntSushi/ripgrep"
+    ["fd"]="sharkdp/fd"
+    ["fzf"]="junegunn/fzf"
+    ["just"]="casey/just"
+    ["lazygit"]="jesseduffield/lazygit"
+    ["btm"]="ClementTsang/bottom"
+    ["yazi"]="sxyazi/yazi"
     ["firacode-nerd"]="ryanoasis/nerd-fonts"
 )
 
@@ -61,6 +70,7 @@ printf "%-15s %-12s %-14s %-12s %-15s\n" "---------------" "------------" "-----
 
 declare -A NEW_VERSIONS=()
 declare -A NEW_DATES=()
+declare -A IS_NEW=()
 UPDATES_COUNT=0
 
 _api() {
@@ -74,34 +84,19 @@ _api() {
 
 _fetch_releases() {
     local repo="$1"
-    if [[ "$repo" == "git/git" ]]; then
-        _fetch_git_tags || return 1
-        return 0
-    fi
     _api "repos/${repo}/releases?per_page=15"
 }
 
-# git/git has no GitHub Releases API payload. tags.atom has name + updated date in one fetch.
-_fetch_git_tags() {
-    local atom
-    atom=$(curl -fsSL "https://github.com/git/git/tags.atom" 2>/dev/null) || return 1
-    echo "$atom" | jq -R -s '
-        [ scan("<entry>[\\s\\S]*?</entry>") as $e
-          | ($e | capture("<title>\\s*(?<tag_name>v[0-9]+\\.[0-9]+\\.[0-9]+)\\s*</title>") // empty) as $t
-          | ($e | capture("<updated>\\s*(?<published_at>[^<]+)</updated>") // empty) as $u
-          | select($t.tag_name != null and $u.published_at != null)
-          | {tag_name:$t.tag_name, published_at:$u.published_at, draft:false, prerelease:false}
-        ]
-    ' 2>/dev/null
-}
-
-for tool in atuin bat bun delta eza gh git starship uv xh yq zellij zoxide firacode-nerd; do
+# Every tool in REPOS. One with no row in versions.toml yet is added at its newest safe release.
+for tool in $(printf '%s\n' "${!REPOS[@]}" | sort); do
     repo="${REPOS[$tool]:-}"
     [[ -z "$repo" ]] && continue
 
-    # Current version from versions.toml
-    curr_ver=$(grep "^${tool} *=" "$VERSIONS_FILE" | sed -E 's/.*version = "([^"]+)".*/\1/')
-    curr_date=$(grep "^${tool} *=" "$VERSIONS_FILE" | sed -E 's/.*released = "([^"]+)".*/\1/')
+    # Current version from versions.toml (empty for a tool with no row yet)
+    curr_ver=$(awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$VERSIONS_FILE" | grep "^${tool} *=" | sed -E 's/.*version = "([^"]+)".*/\1/') || true
+    curr_date=$(awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$VERSIONS_FILE" | grep "^${tool} *=" | sed -E 's/.*released = "([^"]+)".*/\1/') || true
+    # A font with no row is not added: new rows go to [tools].
+    [[ -z "$curr_ver" && "$tool" == firacode-nerd ]] && continue
 
     # Fetch release JSON
     json=$(_fetch_releases "$repo" || echo "[]")
@@ -134,7 +129,12 @@ for tool in atuin bat bun delta eza gh git starship uv xh yq zellij zoxide firac
     if [[ "$curr_ver" == "$safe_ver" ]]; then
         printf "%-15s %-12s %-14s %-12s \033[32m%-15s\033[0m\n" "$tool" "$curr_ver" "$safe_ver" "$rel_date" "✅ up to date"
     else
-        printf "%-15s \033[33m%-12s\033[0m \033[1;32m%-14s\033[0m %-12s \033[1;33m%-15s\033[0m\n" "$tool" "$curr_ver" "$safe_ver" "$rel_date" "🚀 UPDATE"
+        label="🚀 UPDATE"
+        if [[ -z "$curr_ver" ]]; then
+            label="🆕 ADD"
+            IS_NEW["$tool"]=1
+        fi
+        printf "%-15s \033[33m%-12s\033[0m \033[1;32m%-14s\033[0m %-12s \033[1;33m%-15s\033[0m\n" "$tool" "${curr_ver:--}" "$safe_ver" "$rel_date" "$label"
         NEW_VERSIONS["$tool"]="$safe_ver"
         NEW_DATES["$tool"]="$rel_date"
         UPDATES_COUNT=$((UPDATES_COUNT + 1))
@@ -148,7 +148,7 @@ if [[ $UPDATES_COUNT -eq 0 ]]; then
     exit 0
 fi
 
-echo -e "\033[1;33mFound $UPDATES_COUNT tool update(s) passing the 14-day quarantine rule.\033[0m\n"
+echo -e "\033[1;33mFound $UPDATES_COUNT tool update(s) passing the ${MIN_AGE_DAYS}-day quarantine rule.\033[0m\n"
 
 if [[ "$APPLY" == "false" ]]; then
     if [[ -t 0 ]]; then
@@ -163,11 +163,18 @@ if [[ "$APPLY" == "false" ]]; then
 fi
 
 if [[ "$APPLY" == "true" ]]; then
-    for tool in "${!NEW_VERSIONS[@]}"; do
+    for tool in $(printf '%s\n' "${!NEW_VERSIONS[@]}" | sort); do
         new_v="${NEW_VERSIONS[$tool]}"
         new_d="${NEW_DATES[$tool]}"
-        sed -i -E "s|^(${tool} *= *\{ *version = *)\"[^\"]+\"(, *released = *)\"[^\"]+\"( *\})|\1\"${new_v}\"\2\"${new_d}\"\3|" "$VERSIONS_FILE"
-        echo "  ✅ Updated $tool -> v$new_v ($new_d)"
+        if [[ -n "${IS_NEW[$tool]:-}" ]]; then
+            last=$(awk '/^\[/{s = ($0 == "[tools]")} s && /^[a-z0-9_-]+ *= *\{/{n = NR} END{print n + 0}' "$VERSIONS_FILE")
+            [[ "$last" -gt 0 ]] || { echo "  ❌ no [tools] rows in versions.toml: cannot add $tool"; continue; }
+            sed -i "${last}a ${tool} = { version = \"${new_v}\", released = \"${new_d}\" }" "$VERSIONS_FILE"
+            echo "  ✅ Added $tool -> v$new_v ($new_d)"
+        else
+            sed -i -E "s|^(${tool} *= *\{ *version = *)\"[^\"]+\"(, *released = *)\"[^\"]+\"( *\})|\1\"${new_v}\"\2\"${new_d}\"\3|" "$VERSIONS_FILE"
+            echo "  ✅ Updated $tool -> v$new_v ($new_d)"
+        fi
     done
     echo -e "\n\033[1;32m🎉 versions.toml updated successfully!\033[0m"
     echo -e "Run \033[1;36mbash install.sh\033[0m to install the new versions."

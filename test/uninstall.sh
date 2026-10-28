@@ -19,12 +19,13 @@ echo -e "\033[1;31m=============================================================
 echo -e "\033[1;33mThis will remove:\033[0m"
 echo "  • All pinned binaries from ~/.local/bin"
 echo "  • Oh My Zsh (~/.oh-my-zsh)"
-echo "  • Dotfiles deployment (~/.dotfiles)"
+echo "  • Legacy ~/.dotfiles copy (only if you answer y at its prompt)"
 echo "  • Tool caches (~/.cache/dotfiles_tools, starship, zoxide, atuin, gh)"
 echo "  • Starship / Atuin / Zellij configs"
-echo "  • Dotfiles loader from ~/.zshrc"
+echo "  • core/init.zsh loader line(s) in ~/.zshrc (any path)"
 echo ""
 echo -e "\033[1;33mIt will NOT remove:\033[0m"
+echo "  • This dotfiles repo, wherever it is cloned"
 echo "  • APT system packages (zsh, git, curl, etc.)"
 echo "  • Homebrew or brew-installed packages"
 echo "  • Your ~/.zshrc (only removes the loader line)"
@@ -56,10 +57,24 @@ if [[ -d "$HOME/.oh-my-zsh" ]]; then
     rm -rf "$HOME/.oh-my-zsh"
 fi
 
-# --- Remove dotfiles deployment ---
+# --- Legacy ~/.dotfiles copy (optional, asks first) ---
+# Older installs copied the repo to ~/.dotfiles. The shell now loads the clone in
+# place, so that copy is unused. It is never removed if it is this repo.
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 if [[ -d "$HOME/.dotfiles" ]]; then
-    echo "🗑️  Removing ~/.dotfiles..."
-    rm -rf "$HOME/.dotfiles"
+    if [[ "$(cd "$HOME/.dotfiles" 2>/dev/null && pwd -P)" == "$REPO_DIR" ]]; then
+        echo "ℹ️  ~/.dotfiles is this repo, keeping it."
+    else
+        echo -e "\033[1;31m⚠️  WARNING: ~/.dotfiles is a legacy copy. Deleting it is permanent (rm -rf).\033[0m"
+        echo -n "Delete ~/.dotfiles? (y/N): "
+        read -r legacy_answer || legacy_answer=""
+        if [[ "$legacy_answer" =~ ^[Yy]$ ]]; then
+            echo "🗑️  Removing ~/.dotfiles..."
+            rm -rf "$HOME/.dotfiles"
+        else
+            echo "Kept ~/.dotfiles."
+        fi
+    fi
 fi
 
 # --- Remove caches ---
@@ -77,10 +92,11 @@ rm -f "$HOME/.config/zellij/config.kdl"
 rmdir "$HOME/.config/atuin" 2>/dev/null || true
 rmdir "$HOME/.config/zellij" 2>/dev/null || true
 
-# --- Remove dotfiles loader from .zshrc ---
+# --- Remove the core/init.zsh loader from .zshrc (any path) ---
+# Same test install.sh uses to detect an existing loader. Only ~/.zshrc is edited.
 if [[ -f "$HOME/.zshrc" ]]; then
-    echo "🗑️  Removing dotfiles loader from ~/.zshrc..."
-    sed -i '/dotfiles\/core\/init.zsh/d' "$HOME/.zshrc"
+    echo "🗑️  Removing core/init.zsh loader from ~/.zshrc..."
+    sed -i '/core\/init\.zsh/d' "$HOME/.zshrc"
     sed -i '/Dotfiles loader/d' "$HOME/.zshrc"
 fi
 

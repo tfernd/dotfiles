@@ -90,7 +90,7 @@ echo -e "${C_CYN}===============================================================
 
 # ---------------------------------------------------------------------------
 echo -e "\n${C_CYN}▸ Core CLI tools${C_RST}"
-for t in git gh uv starship zoxide atuin zellij eza yq xh jq bun; do
+for t in git gh uv starship zoxide atuin zellij eza yq xh jq bun terraform terraform-ls rg fd just lazygit btm yazi; do
     require_cmd "$t"
 done
 require_any "bat"   bat batcat
@@ -122,7 +122,7 @@ esac
 # ---------------------------------------------------------------------------
 echo -e "\n${C_CYN}▸ Feature flags (tool-cache)${C_RST}"
 for f in HAS_ZOXIDE HAS_EZA HAS_BAT HAS_GH HAS_JQ HAS_XH HAS_DELTA \
-         HAS_STARSHIP HAS_YQ HAS_UV HAS_BUN HAS_ATUIN HAS_FZF HAS_ZELLIJ \
+         HAS_STARSHIP HAS_YQ HAS_UV HAS_BUN HAS_ATUIN HAS_FZF HAS_ZELLIJ HAS_TERRAFORM \
          HAS_TRASH HAS_TRASH_PUT; do
     require_flag "$f"
 done

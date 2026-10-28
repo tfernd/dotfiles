@@ -33,6 +33,7 @@ export HAS_BUN=$(has_tool bun)
 export HAS_ATUIN=$(has_tool atuin)
 export HAS_FZF=$(has_tool fzf)
 export HAS_ZELLIJ=$(has_tool zellij)
+export HAS_TERRAFORM=$(has_tool terraform)
 #hash:$_cache_hash
 EOF
 )

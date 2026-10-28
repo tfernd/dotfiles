@@ -2,8 +2,8 @@
 # ============================================================================
 # 🚀 DOTFILES MASTER LOADER (zsh-only)
 # ============================================================================
-# Source from ~/.zshrc:
-#   [ -f ~/.dotfiles/core/init.zsh ] && source ~/.dotfiles/core/init.zsh
+# Sourced from ~/.zshrc. install.sh appends this line; the repo loads in place:
+#   [ -f "<repo>/core/init.zsh" ] && source "<repo>/core/init.zsh"
 # ============================================================================
 
 DOTFILES_DIR="${${(%):-%x}:A:h:h}"
