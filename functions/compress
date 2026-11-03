@@ -1,38 +1,87 @@
-# Smart archiver
+# Create an archive from files/folders; the name's extension picks the format
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo -e "📝 \033[1;33mUsage:\033[0m compress <archive_name[.zip|.tar.gz|.7z|etc]> <file/folder> [more files...]"
+    echo "💡 Default extension is .tar.gz if none is provided. Refuses to touch an archive that already exists."
+    echo "💡 .gz .bz2 .xz .zst .Z hold one file only: use .tar.gz for several files or a folder."
+    return 0
+fi
+
 if [[ $# -lt 2 ]]; then
     echo -e "📝 \033[1;33mUsage:\033[0m compress <archive_name[.zip|.tar.gz|.7z|etc]> <file/folder> [more files...]"
     echo "💡 Default extension is .tar.gz if none is provided."
     return 1
 fi
 
-local archive=$1
+local archive=$1 input tmp sz rc
+local -a inputs
 shift
 
-if [[ "$archive" != *.* ]]; then
-    archive="${archive}.tar.gz"
+# Only the file name decides: a dot in a folder name (v1.0/x) is not an extension.
+[[ "${archive:t}" != *.* ]] && archive="${archive}.tar.gz"
+[[ "$archive" == -* ]] && archive="./$archive"
+for input in "$@"; do
+    [[ "$input" == -* ]] && input="./$input"
+    inputs+=("$input")
+done
+
+if [[ -e "$archive" || -L "$archive" ]]; then
+    # zip and 7z would append to it while tar and gzip replace it: refuse in every shell.
+    echo "❌ $archive exists (remove it first)"
+    return 1
 fi
 
-echo "📦 Compressing into $archive..."
-case "$archive" in
-    *.tar.bz2|*.tbz2) tar cvjf           "$archive" "$@" ;;
-    *.tar.gz|*.tgz)   tar cvzf           "$archive" "$@" ;;
-    *.tar.xz|*.txz)   tar cvJf           "$archive" "$@" ;;
-    *.tar.zst)        tar --zstd -cvf    "$archive" "$@" ;;
-    *.tar)            tar cvf            "$archive" "$@" ;;
-    *.zip)            zip -r             "$archive" "$@" ;;
-    *.7z)             7z a               "$archive" "$@" ;;
-    *.bz2)            bzip2 -c    "$@" > "$archive"      ;;
-    *.gz)             gzip -c     "$@" > "$archive"      ;;
-    *.xz)             xz -c       "$@" > "$archive"      ;;
-    *.zst)            zstd -c     "$@" > "$archive"      ;;
-    *.Z)              command compress -c "$@" > "$archive" ;;
-    *)                echo "❌ Unsupported format '$archive'."; return 1 ;;
+local single=false
+case "${(L)archive:t}" in
+    *.tar.bz2|*.tbz2|*.tar.gz|*.tgz|*.tar.xz|*.txz|*.tar.zst|*.tar|*.zip) ;;
+    *.7z)
+        sz="${commands[7zz]:-${commands[7z]:-$commands[7za]}}"
+        if [[ -z "$sz" ]]; then
+            echo "❌ No 7-Zip found (install '7zz', '7z' or '7za')"; return 1
+        fi
+        ;;
+    *.bz2|*.gz|*.xz|*.zst) single=true ;;
+    *.z)
+        if (( ! $+commands[compress] )); then
+            echo "❌ 'compress' is not installed, so .Z cannot be made"; return 1
+        fi
+        single=true
+        ;;
+    *) echo "❌ Unsupported format '$archive'."; return 1 ;;
 esac
 
-if [[ $? -eq 0 ]]; then
+if [[ "$single" == "true" ]]; then
+    if (( ${#inputs} != 1 )) || [[ -d "${inputs[1]}" ]]; then
+        echo "❌ ${archive:t} holds a single file, not several files or a folder (use .tar.gz)"
+        return 1
+    fi
+fi
+
+# Build under a temporary name in the same folder and rename on success, so a failure leaves nothing behind.
+tmp="${archive:h}/.tmp.$$.${archive:t}"
+
+echo "📦 Compressing into $archive..."
+case "${(L)archive:t}" in
+    *.tar.bz2|*.tbz2) command tar cvjf        "$tmp" "${inputs[@]}" ;;
+    *.tar.gz|*.tgz)   command tar cvzf        "$tmp" "${inputs[@]}" ;;
+    *.tar.xz|*.txz)   command tar cvJf        "$tmp" "${inputs[@]}" ;;
+    *.tar.zst)        command tar --zstd -cvf "$tmp" "${inputs[@]}" ;;
+    *.tar)            command tar cvf         "$tmp" "${inputs[@]}" ;;
+    *.zip)            command zip -ry         "$tmp" "${inputs[@]}" ;;
+    *.7z)             "$sz" a -snl            "$tmp" "${inputs[@]}" ;;
+    *.bz2)            command bzip2 -c  "${inputs[@]}" > "$tmp" ;;
+    *.gz)             command gzip -c   "${inputs[@]}" > "$tmp" ;;
+    *.xz)             command xz -c     "${inputs[@]}" > "$tmp" ;;
+    *.zst)            command zstd -c   "${inputs[@]}" > "$tmp" ;;
+    *.z)              command compress -c "${inputs[@]}" > "$tmp" ;;
+esac
+rc=$?
+
+if [[ $rc -eq 0 ]] && command mv -- "$tmp" "$archive"; then
     echo "✅ Successfully created $archive"
     return 0
 else
+    # Only the temporary file this call created is removed, so the trash policy for user files is untouched.
+    command rm -f -- "$tmp"
     echo "❌ Compression failed!"
     return 1
 fi

@@ -67,11 +67,17 @@ The clone stays where it is and is used in place. If you already cloned elsewher
 5. **FiraCode Nerd Font**
 6. **Pinned tools** from `versions.toml` (skip any release **younger than the number of days in `.freshness`**, SHA256 checked)
    - **All platforms:** `uv`, `gh` (pinned). `git` is not pinned: step 2 installs it (apt on Debian / WSL, Homebrew on macOS)
-   - **Linux/WSL also:** starship, zoxide, delta, eza, bat, xh, yq, bun, atuin, zellij, terraform, terraform-ls, ripgrep (`rg`), fd, fzf, just, lazygit, bottom (`btm`), yazi
+   - **Linux/WSL also:** starship, zoxide, delta, eza, bat, bun, atuin, terraform, terraform-ls, ripgrep (`rg`), fd, fzf, just, lazygit, bottom (`btm`), yazi
    - macOS gets the rest of those via Homebrew in step 2
 7. Configures **delta** as git pager; `merge.conflictstyle` is `zdiff3` if git ≥ 2.35, else `diff3`
 8. Wires the repo in place (no copy): appends `[ -f "<repo>/core/init.zsh" ] && source "<repo>/core/init.zsh"` to `~/.zshrc`, only when no `core/init.zsh` line exists yet
 9. Starts zsh
+
+A run prints one line per step (`▸ [1/7] System packages ..... ✅ up to date (2s)`), detail lines only for an action or a problem, then a summary (installed / upgraded / unchanged / failed, total time) and a short box with the next steps. Colour is off with `NO_COLOR` or a piped stdout. Details of the run:
+
+- **Packages:** missing ones are found with `dpkg-query` (macOS: `brew list`). `apt-get update` and `install` (and `sudo`) run only when something is missing; `update` is skipped when the package lists are under a day old. apt output is shown only on failure.
+- **Pinned tools:** a tool already at its pin prints nothing. Installs run up to 4 at a time, each with its SHA256 check, and the results print in order. `--force` reinstalls every tool and prints one line each.
+- **Verification:** `doctor.zsh --quiet` runs at the end: only failures and warnings, then one pass line.
 
 Pins live in `versions.toml`. `~/.local/bin` is on PATH (see `core/paths.zsh`). The copy in `~/.local/bin` is the one that counts: a newer copy from apt or Homebrew does not keep the pin out, and `dotdoctor clean` lists such copies for removal. A tool with no row in `versions.toml` yet is skipped until `bash update-versions.sh --apply` adds it.
 

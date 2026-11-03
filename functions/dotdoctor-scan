@@ -29,7 +29,7 @@ for arg in "$@"; do
         --facts) mode=facts ;;
         --save)  mode=save ;;
         --diff)  mode=diff ;;
-        *) echo "❌ unknown scan option: $arg"; return 1 ;;
+        *) echo "❌ unknown scan option: $arg"; _dd_hint_subcommand "$arg"; return 1 ;;
     esac
 done
 # The helpers in dotdoctor-lib read DD_QUIET: silent outside the report.

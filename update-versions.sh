@@ -40,9 +40,6 @@ declare -A REPOS=(
     ["gh"]="cli/cli"
     ["starship"]="starship/starship"
     ["uv"]="astral-sh/uv"
-    ["xh"]="ducaale/xh"
-    ["yq"]="mikefarah/yq"
-    ["zellij"]="zellij-org/zellij"
     ["zoxide"]="ajeetdsouza/zoxide"
     ["terraform"]="hashicorp/terraform"
     ["terraform-ls"]="hashicorp/terraform-ls"
@@ -105,13 +102,38 @@ for tool in $(printf '%s\n' "${!REPOS[@]}" | sort); do
         continue
     fi
 
-    # Parse newest release where published_at <= CUTOFF_DATE and not draft/prerelease
-    match=$(echo "$json" | jq -r --arg cutdate "$CUTOFF_DATE" '
+    # Safe releases (not draft/prerelease, published on or before CUTOFF_DATE), newest publish first
+    candidates=$(echo "$json" | jq -r --arg cutdate "$CUTOFF_DATE" '
         [ .[] | select(.draft == false and .prerelease == false)
           | .epoch = (.published_at | fromdateiso8601)
           | select(.published_at[:10] <= $cutdate)
-        ] | sort_by(.epoch) | reverse | .[0] // empty | "\(.tag_name) \(.published_at[:10])"
+        ] | sort_by(.epoch) | reverse | .[] | "\(.tag_name) \(.published_at[:10])"
     ' 2>/dev/null || true)
+
+    # The highest version wins, not the latest publish: a patch on an older line can be published later.
+    # sort -V only orders plain dotted numbers, so a tool with any other safe tag keeps newest-by-date.
+    match=""
+    if [[ -n "$candidates" ]]; then
+        numeric=true
+        normalised=""
+        while read -r tag rel_day; do
+            t="${tag#v}"
+            t="${t#bun-v}"
+            [[ "$t" =~ ^[0-9]+(\.[0-9]+)*$ ]] || numeric=false
+            normalised+="$t $rel_day"$'\n'
+        done <<< "$candidates"
+        if [[ "$numeric" == true ]]; then
+            match=$(printf '%s' "$normalised" | sort -V -k1,1 | tail -n 1)
+            # Never propose a version older than the pin
+            top=${match%% *}
+            if [[ "$curr_ver" =~ ^[0-9]+(\.[0-9]+)*$ && "$curr_ver" != "$top" ]] \
+                && [[ "$(printf '%s\n%s\n' "$curr_ver" "$top" | sort -V | tail -n 1)" == "$curr_ver" ]]; then
+                match="$curr_ver $curr_date"
+            fi
+        else
+            match="${candidates%%$'\n'*}"
+        fi
+    fi
 
     if [[ -z "$match" ]]; then
         printf "%-15s %-12s %-14s %-12s \033[33m%-15s\033[0m\n" "$tool" "$curr_ver" "$curr_ver" "$curr_date" "no safe release"

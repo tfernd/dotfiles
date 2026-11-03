@@ -21,6 +21,7 @@ case "${1:-}" in
     --apply) apply=true ;;
     *)       echo "❌ Unknown option: $1"
              echo "Usage: dotdoctor update [--apply]"
+             _dd_hint_subcommand "$1"
              return 1 ;;
 esac
 [[ -n "${DD_APPLY_ALL:-}" ]] && DD_ASK_ALL=true

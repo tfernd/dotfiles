@@ -17,10 +17,29 @@ case "$sub" in
     scan)           dotdoctor-scan "$@" ;;
     update)         dotdoctor-update "$@" ;;
     clean)          dotdoctor-clean "$@" ;;
-    -h|--help|help) echo "Usage: dotdoctor [check [--latest] [--advisories] | scan [--deep] | update [--apply] | clean [--apply]]" ;;
+    -h|--help|help)
+        command cat <<'EOF'
+📝 Usage: dotdoctor [command] [flags]   (-h, --help and help print this)
+
+  dotdoctor                       same as check
+  dotdoctor check                 pinned versions and known advisories (no network)
+  dotdoctor check --latest        also ask GitHub for releases past the quarantine
+  dotdoctor check --advisories    ask OSV.dev about the [osv] tools (network)
+                                  check flags combine: check --latest --advisories
+  dotdoctor scan                  local indicators of compromise (no network, no sudo)
+  dotdoctor scan --deep           also verify every installed package file (slow)
+  dotdoctor scan --facts|--save|--diff
+                                  print the facts, save a baseline, or compare with it
+  dotdoctor update                what can be updated or removed; nothing runs
+  dotdoctor update --apply        ask y/n/a/q before each update step
+  dotdoctor clean                 leftovers to remove; --apply asks before each one
+
+install.sh is only for a first install. For later updates use dotdoctor update --apply.
+EOF
+        ;;
     *)
         echo "❌ Unknown subcommand: $sub"
-        echo "Usage: dotdoctor [check [--latest] [--advisories] | scan [--deep] | update [--apply] | clean [--apply]]"
+        echo "Usage: dotdoctor [check [--latest] [--advisories] | scan [--deep|--facts|--save|--diff] | update [--apply] | clean [--apply] | -h|--help]"
         return 1
         ;;
 esac

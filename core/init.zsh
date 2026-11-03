@@ -37,7 +37,7 @@ for _f in platform.zsh paths.zsh history.zsh tool-cache.zsh; do
 done
 
 # 2. Plugins
-for _f in shell.zsh zoxide.zsh atuin.zsh zellij.zsh; do
+for _f in shell.zsh zoxide.zsh atuin.zsh; do
     [[ -f "$DOTFILES_DIR/plugins/$_f" ]] && _dot_source "$DOTFILES_DIR/plugins/$_f"
 done
 

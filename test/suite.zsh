@@ -75,24 +75,12 @@ assert_var HAS_UV
 assert_var HAS_BUN
 assert_var HAS_ATUIN
 assert_var HAS_FZF
-assert_var HAS_ZELLIJ
 assert_var HAS_TRASH_PUT
 assert_var HAS_TRASH
-assert_var HAS_JQ
-assert_var HAS_XH
 assert_var HAS_DELTA
 assert_var HAS_STARSHIP
 assert_var HAS_BATCAT
-assert_var HAS_YQ
 assert_var HAS_TERRAFORM
-
-echo -e "\n🔍 Checking Zellij..."
-assert_defined zj
-assert_defined zja
-assert_defined zjl
-assert_defined zjs
-assert_defined zjk
-assert_defined zjd
 
 echo -e "\n🔍 Checking File & Navigation..."
 assert_defined ls
@@ -107,33 +95,19 @@ assert_defined extract
 assert_defined compress
 assert_defined ..
 
-echo -e "\n🔍 Checking Git Aliases & Tools..."
-assert_defined gs
-assert_defined gd
-assert_defined ga
-assert_defined gl
-assert_defined gp
-assert_defined gb
-assert_defined gba
-assert_defined gds
-assert_defined pr
-assert_defined prs
-assert_defined gstat
+echo -e "\n🔍 Checking GitHub alias..."
 assert_defined ghv
 
 echo -e "\n🔍 Checking Network & System..."
 assert_defined myip
 assert_defined localip
-assert_defined port
-assert_defined kill-port
 assert_defined sudok
-assert_defined http
+assert_defined help
 assert_defined reload
 assert_defined x
 assert_defined path
 
 echo -e "\n🔍 Checking Autoloaded Functions..."
-assert_defined server
 assert_defined git-setup
 assert_defined ssh-setup
 assert_defined c
@@ -158,41 +132,83 @@ for ext in zip tar tar.gz tgz tar.bz2 tbz2 tar.xz txz tar.zst 7z gz bz2 xz zst Z
 done
 rm -f "/tmp/data"
 
+# Real tools (the mocks above only touch files): run in a subshell without the mock directory.
+echo -e "\n🧪 Functional: compress & extract roundtrips (real tools)"
+_arc_out=$(
+    path=(${path:#/tmp/dotfiles_mock_bin}); hash -r
+    T=/tmp/test_arcfix; command rm -rf "$T"; mkdir -p "$T/src/sub" "$T/v1.0"; cd "$T/src" || exit 1
+    print -r -- one > a.txt; print -r -- two > sub/b.txt; print -r -- dash > ./-z.txt
+    ok() { [[ "$2" == "0" ]] && print -r -- "OK|$1" || print -r -- "NO|$1"; }
+
+    compress "$T/v1.0/x" a.txt sub >/dev/null 2>&1
+    ok "compress dotted dir keeps default .tar.gz" "$([[ -f $T/v1.0/x.tar.gz ]]; print $?)"
+
+    compress "$T/UP.TAR.GZ" a.txt sub >/dev/null 2>&1
+    ok "compress uppercase .TAR.GZ is a real gzip tar" "$(command tar -tzf $T/UP.TAR.GZ >/dev/null 2>&1; print $?)"
+    extract "$T/UP.TAR.GZ" "$T/o_up" >/dev/null 2>&1
+    ok "extract .TAR.GZ roundtrip" "$(command diff -r sub $T/o_up/sub >/dev/null 2>&1; print $?)"
+
+    compress "$T/dash.tar.gz" -z.txt a.txt >/dev/null 2>&1
+    extract "$T/dash.tar.gz" "$T/o_dash" >/dev/null 2>&1
+    ok "leading-dash input roundtrip (tar.gz)" "$(command diff ./-z.txt $T/o_dash/-z.txt >/dev/null 2>&1; print $?)"
+
+    if (( $+commands[zip] && $+commands[unzip] )); then
+        compress "$T/d.zip" -z.txt a.txt >/dev/null 2>&1
+        extract "$T/d.zip" "$T/o_dz" >/dev/null 2>&1
+        ok "leading-dash input roundtrip (zip)" "$(command diff ./-z.txt $T/o_dz/-z.txt >/dev/null 2>&1; print $?)"
+
+        compress "$T/e.zip" a.txt >/dev/null 2>&1
+        compress "$T/e.zip" sub >/dev/null 2>&1; rc=$?
+        ok "existing zip refused with status 1" "$((rc == 1 ? 0 : 1))"
+        ok "existing zip not appended to" "$(command unzip -l $T/e.zip | command grep -q b.txt; print $((1 - $?)))"
+
+        cp "$T/e.zip" "$T/x.jar"; extract "$T/x.jar" "$T/o_jar" >/dev/null 2>&1
+        ok "extract .jar" "$(command diff a.txt $T/o_jar/a.txt >/dev/null 2>&1; print $?)"
+
+        cp "$T/d.zip" "$T/-z.zip"; (cd "$T" && extract -z.zip o_dz2 >/dev/null 2>&1)
+        ok "extract leading-dash zip name" "$(command diff ./-z.txt $T/o_dz2/-z.txt >/dev/null 2>&1; print $?)"
+    fi
+
+    compress "$T/nx.tar.gz" nofile_here >/dev/null 2>&1; rc=$?
+    ok "nonexistent input: status 1" "$((rc == 1 ? 0 : 1))"
+    ok "nonexistent input leaves no archive or temp" "$(command find $T -maxdepth 1 \( -name 'nx*' -o -name '.tmp.*' \) | command grep -q . ; print $((1 - $?)))"
+
+    compress "$T/m.gz" a.txt sub/b.txt >/dev/null 2>&1; rc=$?
+    ok "several inputs into .gz refused, no file" "$([[ $rc -eq 1 && ! -e $T/m.gz ]]; print $?)"
+    compress "$T/dir.gz" sub >/dev/null 2>&1; rc=$?
+    ok "directory into .gz refused, no file" "$([[ $rc -eq 1 && ! -e $T/dir.gz ]]; print $?)"
+
+    cp "$T/UP.TAR.GZ" "$T/noext"; extract "$T/noext" "$T/o_ne" >/dev/null 2>&1
+    ok "extract extension-less tar.gz by sniffing" "$(command diff -r sub $T/o_ne/sub >/dev/null 2>&1; print $?)"
+
+    if (( $+commands[zstd] )); then
+        compress "$T/z.tar.zst" a.txt sub >/dev/null 2>&1
+        extract "$T/z.tar.zst" "$T/o_zst" >/dev/null 2>&1
+        ok "extract .tar.zst roundtrip" "$(command diff -r sub $T/o_zst/sub >/dev/null 2>&1; print $?)"
+    fi
+    if (( $+commands[7zz] || $+commands[7z] || $+commands[7za] )); then
+        compress "$T/s.7z" -z.txt sub >/dev/null 2>&1
+        extract "$T/s.7z" "$T/o_7z" >/dev/null 2>&1
+        ok "7z roundtrip with leading-dash input" "$(command diff -r sub $T/o_7z/sub >/dev/null 2>&1 && command diff ./-z.txt $T/o_7z/-z.txt >/dev/null 2>&1; print $?)"
+    fi
+
+    print -r -- "$(extract $T/src 2>&1)" | command grep -q 'is a directory'
+    ok "extract on a directory says 'is a directory'" "$?"
+    command rm -rf "$T"
+)
+for _arc_line in ${(f)_arc_out}; do
+    if [[ "$_arc_line" == OK\|* ]]; then
+        echo -e "  ✅ [PASSED] ${_arc_line#OK|}"; ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] ${_arc_line#NO|}"; ((test_failed++))
+    fi
+done
+unset _arc_out _arc_line
+
 echo -e "\n🧪 Functional: Network"
 myip >/dev/null 2>&1 && { echo -e "  ✅ [PASSED] myip"; ((test_passed++)); } || { echo -e "  ❌ [FAILED] myip"; ((test_failed++)); }
 localip >/dev/null 2>&1 && { echo -e "  ✅ [PASSED] localip"; ((test_passed++)); } || { echo -e "  ❌ [FAILED] localip"; ((test_failed++)); }
-port 8080 >/dev/null 2>&1 && { echo -e "  ✅ [PASSED] port"; ((test_passed++)); } || { echo -e "  ❌ [FAILED] port"; ((test_failed++)); }
 
-echo -e "\n🧪 Functional: Git lifecycle"
-GIT_ROOT="/tmp/test_git_repo"
-command rm -rf "$GIT_ROOT" >/dev/null 2>&1
-mkdir -p "$GIT_ROOT" && cd "$GIT_ROOT"
-git init >/dev/null 2>&1
-git config user.email "test@example.com"
-git config user.name "Test User"
-touch "base.txt"
-git add "base.txt" >/dev/null 2>&1
-git commit -m "initial" >/dev/null 2>&1
-echo "change" >> "base.txt"
-
-if eval "gs" | grep -q "base.txt"; then
-    echo -e "  ✅ [PASSED] gs"
-    ((test_passed++))
-else
-    echo -e "  ❌ [FAILED] gs"
-    ((test_failed++))
-fi
-
-if eval "gd" | grep -q "+change"; then
-    echo -e "  ✅ [PASSED] gd"
-    ((test_passed++))
-else
-    echo -e "  ❌ [FAILED] gd"
-    ((test_failed++))
-fi
-
-cd "$DOT_DIR"
-command rm -rf "$GIT_ROOT" >/dev/null 2>&1
 
 function assert_eq() {
     if [[ "$2" == "$3" ]]; then
@@ -203,6 +219,33 @@ function assert_eq() {
         ((test_failed++))
     fi
 }
+
+echo -e "\n🔍 Checking removed names are gone..."
+for _gone in http json port kill-port gstat server pr prs gs gl; do
+    # pr and gs may be real programs (coreutils, ghostscript): only an alias or function means the old code is back.
+    _gone_kind=$(whence -w $_gone 2>/dev/null); _gone_kind=${_gone_kind##*: }
+    assert_eq "removed: $_gone is no alias or function" "$([[ "$_gone_kind" == (alias|function) ]] && echo "$_gone_kind" || echo gone)" "gone"
+done
+unset _gone _gone_kind
+
+echo -e "\n🔍 Checking every name in 'help' is defined..."
+# Rows of functions/help: print_cmd "a, b" "text". A row gated on HAS_X (same line or an if block) counts only when HAS_X is true.
+_help_gate="" _help_names=()
+while IFS= read -r _help_line; do
+    if [[ "$_help_line" =~ '^if \[\[ "\$(HAS_[A-Z_]+)"' ]]; then _help_gate=$match[1]; continue; fi
+    [[ "$_help_line" == "fi" ]] && { _help_gate=""; continue; }
+    [[ "$_help_line" =~ 'print_cmd "([^"]+)"' ]] || continue
+    _help_row=$match[1] _help_row_gate=$_help_gate
+    [[ "$_help_line" =~ '^\[\[ "\$(HAS_[A-Z_]+)"' ]] && _help_row_gate=$match[1]
+    [[ -n "$_help_row_gate" && "${(P)_help_row_gate}" != "true" ]] && continue
+    for _help_name in ${(s:, :)_help_row}; do
+        [[ "$_help_name" == *" "* || "$_help_name" == "Ctrl+R"* ]] && continue
+        _help_names+=("$_help_name")
+    done
+done < "$DOT_DIR/functions/help"
+for _help_name in $_help_names; do assert_defined "$_help_name"; done
+assert_eq "help: the row scan found the cheatsheet commands" "$(( ${#_help_names} > 15 ))" "1"
+unset _help_gate _help_names _help_line _help_row _help_row_gate _help_name
 
 echo -e "\n🧪 Functional: Agent mode (this suite runs non-interactively)"
 assert_eq "IS_AGENT=true in non-interactive shell" "$IS_AGENT" "true"
@@ -297,6 +340,13 @@ assert_defined dotdoctor-check
 assert_defined dotdoctor-scan
 assert_defined dotdoctor-lib
 assert_eq "dotdoctor rejects unknown subcommands" "$(dotdoctor nope >/dev/null 2>&1; echo $?)" "1"
+# dotdoctor help prints the usage table (help, -h and --help), exit 0.
+dd_help=$(dotdoctor help 2>&1); dd_help_rc=$?
+assert_eq "dotdoctor help exits 0" "$dd_help_rc" "0"
+assert_contains "dotdoctor help lists update --apply" "$dd_help" "update --apply"
+assert_contains "dotdoctor help lists dotdoctor scan" "$dd_help" "dotdoctor scan"
+assert_contains "dotdoctor help says install.sh is for a first install" "$dd_help" "install.sh is only for a first install"
+assert_eq "dotdoctor -h prints the same table" "$(dotdoctor -h 2>&1)" "$dd_help"
 
 # Quarantine dates: bun 1.4.4 was released 2026-10-22, so it leaves quarantine on 2026-11-05.
 DD_TEST_BIN="/tmp/test_dotdoctor_bin"
@@ -406,6 +456,58 @@ assert_contains "dotdoctor check: a pin inside the affected range is named as af
     "the pin 1.0.0 is affected by CVE-2026-0001: bump it to 1.0.5 now"
 assert_eq "dotdoctor check: an affected pin exits 1" "$dd_pin_rc" "1"
 command rm -rf "$dd_pv" "$dd_pb"
+
+# Snap and Flatpak runtimes ship their own libbrotli: affected is a warning (exit 0, no 'update with', no Next line).
+dd_sf="/tmp/test_dd_snapflat"; dd_sfb="/tmp/test_dd_snapflat_bin"
+command rm -rf "$dd_sf" "$dd_sfb"; mkdir -p "$dd_sf/home/.local/share/flatpak/runtime/org.fake.Platform/x86_64/23.08/active/files/lib/x86_64-linux-gnu" \
+    "$dd_sf/snap/fakesnap/current/usr/lib/x86_64-linux-gnu" "$dd_sfb"
+: > "$dd_sf/home/.local/share/flatpak/runtime/org.fake.Platform/x86_64/23.08/active/files/lib/x86_64-linux-gnu/libbrotlidec.so.1.2.0"
+: > "$dd_sf/snap/fakesnap/current/usr/lib/x86_64-linux-gnu/libbrotlidec.so.1.1.0"
+printf '[tools]\n\n[fixes]\nlibbrotli = { fixed = "1.0.10 1.1.1 1.2.1", released = "2026-01-01 2026-01-01 2026-01-01", cve = "CVE-2026-111497", affected = "1.0.3 1.2.0" }\n' > "$dd_sf/versions.toml"
+print 14 > "$dd_sf/.freshness"
+printf '#!/bin/sh\nexit 1\n' > "$dd_sfb/dpkg-query"; chmod +x "$dd_sfb/dpkg-query"
+dd_sf_out=$(DOTFILES_DIR="$dd_sf" HOME="$dd_sf/home" DOTDOCTOR_SNAP_ROOT="$dd_sf/snap" DOTDOCTOR_PY_ROOTS="$dd_sf/none" DOTDOCTOR_OFFLINE=1 DOTDOCTOR_NOW="$dd_pin_now" PATH="$dd_sfb:$PATH" dotdoctor check 2>&1); dd_sf_rc=$?
+dd_sf_snap=$(print -r -- "$dd_sf_out" | command grep 'snap fakesnap')
+dd_sf_fp=$(print -r -- "$dd_sf_out" | command grep 'flatpak org.fake.Platform')
+assert_contains "dotdoctor check: an affected snap runtime is a warning (old: failure mark)" "$dd_sf_snap" "is affected by CVE-2026-111497: the fix (1.1.1) is the publisher's"
+assert_contains "dotdoctor check: an affected flatpak runtime is a warning (old: failure mark)" "$dd_sf_fp" "is affected by CVE-2026-111497: the fix (1.2.1) is the publisher's"
+assert_eq "dotdoctor check: snap and flatpak lines carry no 'update with' (old: they did)" "$([[ "$dd_sf_snap$dd_sf_fp" == *"update with"* ]] && echo yes || echo no)" "no"
+assert_eq "dotdoctor check: only snap/flatpak findings exit 0 (old: 1)" "$dd_sf_rc" "0"
+assert_eq "dotdoctor check: only snap/flatpak findings print no Next line (old: printed)" "$([[ "$dd_sf_out" == *"Next: dotdoctor update"* ]] && echo yes || echo no)" "no"
+command rm -rf "$dd_sf" "$dd_sfb"
+
+# Guard: a Node copy inside the affected range still fails the check.
+dd_nf="/tmp/test_dd_nodefail"
+command rm -rf "$dd_nf"; mkdir -p "$dd_nf/bin"
+printf '[tools]\n\n[fixes]\nnode-brotli = { fixed = "22.12.1", released = "2026-01-01", cve = "CVE-2026-0002", affected = "22.0.0 22.12.0" }\n' > "$dd_nf/versions.toml"
+print 14 > "$dd_nf/.freshness"
+printf '#!/bin/sh\necho v22.12.0\n' > "$dd_nf/bin/node"; chmod +x "$dd_nf/bin/node"
+dd_nf_out=$(DOTFILES_DIR="$dd_nf" HOME="$dd_nf" DOTDOCTOR_PY_ROOTS="$dd_nf/none" DOTDOCTOR_OFFLINE=1 DOTDOCTOR_NOW="$dd_pin_now" PATH="$dd_nf/bin:$PATH" dotdoctor check 2>&1); dd_nf_rc=$?
+assert_eq "dotdoctor check: an affected Node still exits 1 (guard)" "$dd_nf_rc" "1"
+command rm -rf "$dd_nf"
+
+# An unknown option that is a subcommand name gets a hint; a plain typo does not.
+dd_hint=$(dotdoctor update clean 2>&1); dd_hint_rc=$?
+assert_contains "dotdoctor update clean: Did you mean hint (old: no hint)" "$dd_hint" "Did you mean: dotdoctor clean ?"
+assert_eq "dotdoctor update clean exits 1" "$dd_hint_rc" "1"
+assert_contains "dotdoctor check scan: Did you mean hint (old: no hint)" "$(dotdoctor check scan 2>&1)" "Did you mean: dotdoctor scan ?"
+assert_contains "dotdoctor clean update: Did you mean hint (old: no hint)" "$(dotdoctor clean update 2>&1)" "Did you mean: dotdoctor update ?"
+assert_contains "dotdoctor scan check: Did you mean hint (old: no hint)" "$(dotdoctor scan check 2>&1)" "Did you mean: dotdoctor check ?"
+assert_eq "dotdoctor update --bogus: no hint (guard)" "$([[ "$(dotdoctor update --bogus 2>&1)" == *"Did you mean"* ]] && echo yes || echo no)" "no"
+dd_help=$(dotdoctor help 2>&1)
+assert_contains "dotdoctor help lists scan --deep (old: only in the file header)" "$dd_help" "dotdoctor scan --deep"
+assert_contains "dotdoctor help lists --help (old: absent)" "$dd_help" "--help"
+assert_contains "dotdoctor help lists plain update (old: only update --apply)" "$dd_help" "dotdoctor update                what can be updated"
+
+# A tool behind its pin (installed 0.9.0, pin 1.0.0) ends check with one Next line for the update.
+dd_nx="/tmp/test_dd_next"; dd_nxb="/tmp/test_dd_next_bin"
+command rm -rf "$dd_nx" "$dd_nxb"; mkdir -p "$dd_nx" "$dd_nxb"
+printf '[tools]\nfaketool = { version = "1.0.0", released = "2026-01-01" }\n' > "$dd_nx/versions.toml"
+print 14 > "$dd_nx/.freshness"
+printf '#!/bin/sh\necho "faketool 0.9.0"\n' > "$dd_nxb/faketool"; chmod +x "$dd_nxb/faketool"
+dd_nx_out=$(DOTFILES_DIR="$dd_nx" DOTDOCTOR_OFFLINE=1 DOTDOCTOR_NOW="$dd_pin_now" PATH="$dd_nxb:$PATH" dotdoctor check 2>&1)
+assert_contains "dotdoctor check: a tool behind its pin ends with a Next line" "$dd_nx_out" "Next: dotdoctor update --apply"
+command rm -rf "$dd_nx" "$dd_nxb"
 
 # A Node copy that is not safe to run (group-writable, mode 775) is never run: its version comes from the
 # nodejs_wheel_binaries-<ver>.dist-info beside it, and it is still reported as affected.
@@ -676,6 +778,9 @@ printf '[tools]\nuv = { version = "0.12.23", released = "2026-10-03" }\n\n[osv]\
 command grep -E '^    _(ver|released)\(\)' "$DOT_DIR/install.sh" > "$dd_pinfx/fns.sh"
 assert_eq "install.sh reads the uv version from [tools], not the [osv] row" \
     "$(DOTFILES_DIR="$dd_pinfx" bash -c "source '$dd_pinfx/fns.sh'; _ver uv")" "0.12.23"
+assert_eq "install.sh _ver on a tool with no row: empty, status 0 under set -euo pipefail" \
+    "$(DOTFILES_DIR="$dd_pinfx" bash -c "set -euo pipefail; source '$dd_pinfx/fns.sh'; v=\$(_ver nosuchtool); r=\$(_released nosuchtool); echo \"reached[\$v][\$r]\"" 2>&1; echo "rc=$?")" \
+    $'reached[][]\nrc=0'
 assert_eq "install.sh reads the uv release date from [tools], not the [osv] row" \
     "$(DOTFILES_DIR="$dd_pinfx" bash -c "source '$dd_pinfx/fns.sh'; _released uv")" "2026-10-03"
 command grep -E '^    curr_(ver|date)=' "$DOT_DIR/update-versions.sh" > "$dd_pinfx/uv.sh"
@@ -950,10 +1055,19 @@ done
 chmod +x "$dd_to"/bin/*
 dd_to_out=$(env -i PATH="$dd_to/bin:/usr/bin:/bin" HOME="$dd_to/home" "$(whence -p bash)" "$dd_to/repo/install.sh" --tools-only </dev/null 2>&1); dd_to_rc=$?
 assert_eq "install.sh --tools-only exits 0" "$dd_to_rc" "0"
-assert_contains "install.sh --tools-only runs the pinned-tool step" "$dd_to_out" "STEP 5"
+assert_contains "install.sh --tools-only runs the pinned-tool step" "$dd_to_out" "[5/7] Pinned tools"
+assert_eq "install.sh: tools all current print one step line and no per-tool line" \
+    "$([[ "$dd_to_out" != *"📦"* && "$dd_to_out" != *"✅  "* && "$(print -r -- "$dd_to_out" | command grep -c '▸')" == 1 ]] && echo quiet || echo noisy)" "quiet"
 assert_eq "install.sh --tools-only skips system setup, doctor and the new shell" \
-    "$([[ "$dd_to_out" == *"STEP 1"* || "$dd_to_out" == *"STEP 7"* || "$dd_to_out" == *"Launching zsh"* ]] && echo ran || echo skipped)" "skipped"
+    "$([[ "$dd_to_out" == *"[1/7]"* || "$dd_to_out" == *"[7/7]"* || "$dd_to_out" == *"Launching zsh"* ]] && echo ran || echo skipped)" "skipped"
 assert_eq "install.sh --tools-only calls no sudo, apt or curl" "$(command cat -- "$dd_to/calls" 2>/dev/null)" ""
+
+# doctor.zsh --quiet prints no passing check and no banner; the old --quiet still printed the banner and rules.
+dd_dq_out=$(zsh "$DOT_DIR/doctor.zsh" --quiet 2>&1)
+assert_eq "doctor --quiet prints no passing (✓) line" "$([[ "$dd_dq_out" == *"✓"* ]] && echo shown || echo hidden)" "hidden"
+assert_eq "doctor --quiet prints no banner or rule" "$([[ "$dd_dq_out" == *"DOTFILES DOCTOR"* || "$dd_dq_out" == *"====="* ]] && echo shown || echo hidden)" "hidden"
+assert_eq "doctor --quiet with NO_COLOR prints no escape code" \
+    "$([[ "$(NO_COLOR=1 zsh "$DOT_DIR/doctor.zsh" --quiet 2>&1)" == *$'\033'* ]] && echo escape || echo plain)" "plain"
 
 # A newer gh outside ~/.local/bin (apt's) does not stop the pin: the installer goes for the pinned one.
 command rm -f "$dd_to/home/.local/bin/gh" "$dd_to/home/.local/bin/zoxide"
@@ -1008,6 +1122,234 @@ print -rl -- '#!/bin/sh' "echo \"[{\\\"tag_name\\\":\\\"v9.9.9\\\",\\\"published
 dd_uv_out=$(env -i PATH="$dd_uv/bin:/usr/bin:/bin" HOME="$dd_uv/home" "$(whence -p bash)" "$dd_uv/repo/update-versions.sh" --apply 2>&1)
 assert_contains "update-versions: a release from the cutoff day counts, whatever the hour" "$dd_uv_out" "Updated bat -> v9.9.9"
 command rm -rf "$dd_uv"
+
+# update-versions.sh takes the highest safe version, not the latest publish: 1.16.7 went out after 1.17.0,
+# and 1.17.1 is inside the 7-day quarantine. Release dates are relative to today, so the fixture stays in the window.
+dd_uvv="/tmp/test_update_versions_order"
+command rm -rf "$dd_uvv"; mkdir -p "$dd_uvv/bin" "$dd_uvv/repo" "$dd_uvv/home"
+command cp -p "$DOT_DIR/update-versions.sh" "$dd_uvv/repo/"; print 7 > "$dd_uvv/repo/.freshness"
+typeset -A dd_uvv_at=()
+for dd_n in 4 10 11 18 25 30; do dd_uvv_at[$dd_n]=$(date -d "-$dd_n days" +%FT12:00:00Z 2>/dev/null || date -v-${dd_n}d +%FT12:00:00Z); done
+printf '[tools]\nterraform = { version = "1.16.7", released = "%s" }\nterraform-ls = { version = "1.17.0", released = "%s" }\nrg = { version = "9.9.9", released = "%s" }\n' \
+    "${dd_uvv_at[10]%%T*}" "${dd_uvv_at[11]%%T*}" "${dd_uvv_at[11]%%T*}" > "$dd_uvv/repo/versions.toml"
+dd_uvv_rel="[{\"tag_name\":\"v1.17.1\",\"published_at\":\"${dd_uvv_at[4]}\",\"draft\":false,\"prerelease\":false},{\"tag_name\":\"v1.16.7\",\"published_at\":\"${dd_uvv_at[10]}\",\"draft\":false,\"prerelease\":false},{\"tag_name\":\"v1.17.0\",\"published_at\":\"${dd_uvv_at[11]}\",\"draft\":false,\"prerelease\":false},{\"tag_name\":\"v1.17.0-rc2\",\"published_at\":\"${dd_uvv_at[18]}\",\"draft\":false,\"prerelease\":true},{\"tag_name\":\"v1.16.6\",\"published_at\":\"${dd_uvv_at[18]}\",\"draft\":false,\"prerelease\":false},{\"tag_name\":\"v1.17.0-rc1\",\"published_at\":\"${dd_uvv_at[25]}\",\"draft\":false,\"prerelease\":true},{\"tag_name\":\"v1.16.5\",\"published_at\":\"${dd_uvv_at[30]}\",\"draft\":false,\"prerelease\":false}]"
+print -r -- "$dd_uvv_rel" > "$dd_uvv/releases.json"
+print -rl -- '#!/bin/sh' "cat '$dd_uvv/releases.json'" > "$dd_uvv/bin/curl"
+print -rl -- '#!/bin/sh' 'exit 1' > "$dd_uvv/bin/gh"
+chmod +x "$dd_uvv/bin/curl" "$dd_uvv/bin/gh"
+dd_uvv_out=$(env -i PATH="$dd_uvv/bin:/usr/bin:/bin" HOME="$dd_uvv/home" "$(whence -p bash)" "$dd_uvv/repo/update-versions.sh" 2>&1 </dev/null | sed $'s/\e\\[[0-9;]*m//g')
+dd_uvv_tf=$(print -r -- "$dd_uvv_out" | awk '$1=="terraform"{print $2, $3, $4}')
+assert_eq "update-versions: 1.17.0 is chosen over 1.16.7, which was published later" "$dd_uvv_tf" "1.16.7 1.17.0 ${dd_uvv_at[11]%%T*}"
+assert_eq "update-versions: 1.17.1, inside the quarantine, is not chosen" \
+    "$([[ "$dd_uvv_tf" == *1.17.1* ]] && echo yes || echo no)" "no"
+dd_uvv_ls=$(print -r -- "$dd_uvv_out" | awk '$1=="terraform-ls"')
+assert_contains "update-versions: a pin that is the highest safe version is up to date" "$dd_uvv_ls" "up to date"
+dd_uvv_rg=$(print -r -- "$dd_uvv_out" | awk '$1=="rg"')
+assert_eq "update-versions: a pin above every safe version is kept, not downgraded" \
+    "$(print -r -- "$dd_uvv_rg" | awk '{print $3}')" "9.9.9"
+assert_contains "update-versions: a pin above every safe version reports up to date" "$dd_uvv_rg" "up to date"
+command rm -rf "$dd_uvv"
+
+# --- Failed trash commands print no success mark ------------------------------
+# Shell functions stand in for the tools (they win over the PATH mocks); each runs in a subshell.
+dd_fs=/tmp/test_failmarks
+command rm -rf "$dd_fs"; mkdir -p "$dd_fs/cwd"; print x > "$dd_fs/orig"
+dd_fs_run() {  # $1 = stdin text, rest = command; stdout+stderr captured
+    ( HAS_FZF=true
+      command rm -f -- "$dd_fs/orig" "$dd_fs/cwd/orig"
+      trash-list() { [[ -e "$dd_fs/orig" ]] || print -r -- "2024-01-01 10:00:00 $dd_fs/orig"; }
+      fzf() { command head -1; }
+      # Lists its one entry, and restores only when it is handed an index.
+      trash-restore() { local pick; read -r pick; print -r -- "   0 2024-01-01 10:00:00 $dd_fs/orig"
+          [[ -n "$pick" ]] || return 0; (( ${DD_RESTORE_RC:-0} )) && return $DD_RESTORE_RC; print x > "$dd_fs/orig"; }
+      trash-empty() { return ${DD_EMPTY_RC:-0}; }
+      mv() { (( ${DD_MV_RC:-0} )) && return $DD_MV_RC; command mv "$@"; }
+      cd "$dd_fs/cwd"
+      print -r -- "$1" | "${@:2}" 2>&1 )
+}
+dd_fs_o=$(DD_RESTORE_RC=1 dd_fs_run 1 rt)
+assert_eq "rt option 1: failed trash-restore prints no ok mark (old code printed it)" \
+    "$([[ "$dd_fs_o" == *"✅"* ]] && echo yes || echo no)" "no"
+assert_contains "rt option 1: failed trash-restore prints an error mark" "$dd_fs_o" "❌"
+assert_eq "rt option 1: failed trash-restore returns 1 (old code returned 0)" "$(DD_RESTORE_RC=1 dd_fs_run 1 rt >/dev/null; echo $?)" "1"
+dd_fs_o=$(dd_fs_run 1 rt)
+assert_contains "rt option 1: successful restore still prints the ok mark" "$dd_fs_o" "✅"
+dd_fs_o=$(DD_RESTORE_RC=1 dd_fs_run 2 rt)
+assert_eq "rt option 2: failed trash-restore prints no ok mark (old code printed it)" \
+    "$([[ "$dd_fs_o" == *"✅"* ]] && echo yes || echo no)" "no"
+dd_fs_o=$(DD_MV_RC=1 dd_fs_run 2 rt)
+assert_eq "rt option 2: failed mv prints no ok mark (old code printed it)" \
+    "$([[ "$dd_fs_o" == *"✅"* ]] && echo yes || echo no)" "no"
+assert_contains "rt option 2: failed mv prints an error mark" "$dd_fs_o" "❌"
+assert_eq "rt option 2: failed mv returns 1 (old code returned 0)" "$(DD_MV_RC=1 dd_fs_run 2 rt >/dev/null; echo $?)" "1"
+dd_fs_o=$(dd_fs_run 2 rt)
+assert_contains "rt option 2: successful restore and mv still print the ok mark" "$dd_fs_o" "✅"
+dd_fs_o=$(DD_EMPTY_RC=1 dd_fs_run y empty-trash)
+assert_eq "empty-trash: failed trash-empty prints no ok mark (old code printed it)" \
+    "$([[ "$dd_fs_o" == *"✅"* ]] && echo yes || echo no)" "no"
+assert_eq "empty-trash: failed trash-empty returns 1 (old code returned 0)" "$(DD_EMPTY_RC=1 dd_fs_run y empty-trash >/dev/null; echo $?)" "1"
+dd_fs_o=$(dd_fs_run y empty-trash)
+assert_contains "empty-trash: successful trash-empty still prints the ok mark" "$dd_fs_o" "✅"
+
+command rm -rf "$dd_fs"
+unfunction dd_fs_run
+
+# --- rm, rt, empty-trash against the real trash-cli (fake HOME and XDG_DATA_HOME) --
+# Each case runs in `env -i` zsh -f with PATH=/usr/bin:/bin, so the real tools answer, not the PATH mocks.
+tw_root=/tmp/test_rmfix
+tw_reset() { command rm -rf "$tw_root"; mkdir -p "$tw_root/home" "$tw_root/xdg" "$tw_root/w" "$tw_root/o"; }
+# $1 = script run inside $tw_root/w after the wrapper is loaded; stdout+stderr captured. TW_ENV adds env words.
+tw() {
+    env -i PATH=/usr/bin:/bin HOME="$tw_root/home" XDG_DATA_HOME="$tw_root/xdg" TERM=dumb TW_PICK="$TW_PICK" \
+        HAS_TRASH=true HAS_TRASH_PUT=true HAS_FZF=true ${=TW_ENV} zsh -f -c "
+        source '$DOT_DIR/modules/files/trash.zsh'
+        cd '$tw_root/w'
+        # fzf picks the first entry whose line ends with \$TW_PICK
+        fzf() { command awk -v p=\"\$TW_PICK\" 'substr(\$0, length(\$0)-length(p)+1)==p { print; exit }'; }
+        $1" </dev/null 2>&1
+}
+tw_count() { env -i PATH=/usr/bin:/bin HOME="$tw_root/home" XDG_DATA_HOME="$tw_root/xdg" trash-list 2>/dev/null | command wc -l | tr -d ' '; }
+
+if [[ -x /usr/bin/trash-put && -x /usr/bin/trash-list && -x /usr/bin/trash-restore && -x /usr/bin/trash-empty ]]; then
+    # A1: the chosen path is a prefix of another entry
+    tw_reset
+    tw_o=$(TW_PICK=/w/x tw 'print a >xy; print b >x; rm xy; rm x; print 1 | rt')
+    assert_eq "rt: picking 'x' brings back x, not xy (old code restored xy)" \
+        "$([[ -e $tw_root/w/x && ! -e $tw_root/w/xy ]] && echo ok || echo wrong)" "ok"
+    assert_contains "rt: prefix pick prints the ok mark" "$tw_o" "✅"
+    assert_eq "rt: prefix pick leaves exactly the other entry trashed" "$(tw_count)" "1"
+
+    # A1b: the same path trashed twice
+    tw_reset
+    tw_o=$(TW_PICK=/w/x tw 'print one >x; rm x; print two >x; rm x; print 1 | rt')
+    assert_eq "rt: duplicate names, one comes back (guards the path; old code also managed)" \
+        "$([[ -e $tw_root/w/x ]] && echo yes || echo no)" "yes"
+    assert_eq "rt: duplicate names, exactly one entry left in the trash" "$(tw_count)" "1"
+
+    # A2: the entry lives in another directory than the current one
+    tw_reset
+    tw_o=$(TW_PICK=/o/a tw 'print A >../o/a; print B >b; rm ../o/a; rm b; print 1 | rt')
+    assert_eq "rt: an entry from another directory is restored there (old code restored w/b)" \
+        "$([[ -e $tw_root/o/a && ! -e $tw_root/w/b ]] && echo ok || echo wrong)" "ok"
+    assert_eq "rt: restoring from another directory leaves the other entry trashed" "$(tw_count)" "1"
+    tw_reset
+    tw_o=$(TW_PICK=/o/a tw 'print A >../o/a; rm ../o/a; command rmdir ../o; print 1 | rt')
+    assert_eq "rt: restore recreates a missing parent directory (old code found nothing)" \
+        "$(command cat -- "$tw_root/o/a" 2>/dev/null)" "A"
+
+    # A3: the original path is taken again by a live file
+    tw_reset
+    tw_o=$(TW_PICK=/o/a tw 'print old >../o/a; rm ../o/a; print live >../o/a; print 2 | rt; print rc=$?')
+    assert_eq "rt option 2: a live file at the original path is not moved (old code moved it)" \
+        "$(command cat -- "$tw_root/o/a" 2>/dev/null)|$([[ -e $tw_root/w/a ]] && echo moved || echo still)" "live|still"
+    assert_contains "rt option 2: refusing prints an error mark and rc=1" "$tw_o" "❌"
+    assert_contains "rt option 2: refusing returns 1" "$tw_o" "rc=1"
+    assert_eq "rt option 2: the refused entry stays in the trash" "$(tw_count)" "1"
+    tw_o=$(TW_PICK=/o/a tw 'print 1 | rt; print rc=$?')
+    assert_contains "rt option 1: original exists returns 1 (old code printed an error and carried on)" "$tw_o" "rc=1"
+    assert_eq "rt option 1: original exists, the live file is intact" "$(command cat -- "$tw_root/o/a")" "live"
+    tw_reset
+    tw_o=$(TW_PICK=/o/a tw 'print old >../o/a; rm ../o/a; print here >a; print 2 | rt; print rc=$?')
+    assert_eq "rt option 2: an existing ./name is not overwritten, nothing restored" \
+        "$(command cat -- "$tw_root/w/a")|$([[ -e $tw_root/o/a ]] && echo restored || echo no)|$(tw_count)" "here|no|1"
+    tw_reset
+    tw_o=$(TW_PICK=/o/a tw 'print old >../o/a; rm ../o/a; print 2 | rt; print rc=$?')
+    assert_eq "rt option 2: restore lands in the current directory (old code left it in o)" \
+        "$(command cat -- "$tw_root/w/a" 2>/dev/null)|$([[ -e $tw_root/o/a ]] && echo left || echo gone)" "old|gone"
+    assert_contains "rt option 2: success prints the ok mark" "$tw_o" "✅"
+
+    # B2, C3: operands
+    tw_reset
+    tw_o=$(tw 'print a >keep; rm keep nope; print rc=$?')
+    assert_contains "rm: a missing operand without -f is reported (old code was silent)" "$tw_o" "rm: cannot remove 'nope': No such file or directory"
+    assert_contains "rm: a missing operand without -f makes rc 1 (old code returned 0)" "$tw_o" "rc=1"
+    assert_eq "rm: the existing operand is still trashed" "$([[ -e $tw_root/w/keep ]] && echo kept || echo gone)" "gone"
+    tw_o=$(tw 'rm -f nope also-nope; print rc=$?')
+    assert_eq "rm -f on missing operands is silent and 0" "$tw_o" "rc=0"
+    tw_o=$(tw 'rm nope; print rc=$?')
+    assert_contains "rm of one missing path prints the rm-style error" "$tw_o" "rm: cannot remove 'nope'"
+    tw_o=$(tw 'rm; print rc=$?')
+    assert_contains "rm with no operand says so (old code was silent)" "$tw_o" "rm: missing operand"
+    assert_contains "rm with no operand returns 1 (old code returned 0)" "$tw_o" "rc=1"
+    tw_reset
+    tw_o=$(tw 'rm .; print rc=$?')
+    assert_contains "rm . is refused with an error mark (old code returned 0)" "$tw_o" "❌"
+    assert_contains "rm . returns 1" "$tw_o" "rc=1"
+    tw_o=$(tw 'rm ..; print rc=$?')
+    assert_contains "rm .. is refused and returns 1" "$tw_o" "rc=1"
+    assert_eq "rm . and rm .. trash nothing" "$(tw_count)" "0"
+    tw_reset
+    tw_o=$(tw 'print a >keep; rm keep "$HOME"; print rc=$?')
+    assert_eq "rm of \$HOME is refused as a whole: the other operand stays too (old code trashed both)" \
+        "$([[ -e $tw_root/w/keep ]] && echo kept || echo gone)|$([[ -d $tw_root/home ]] && echo home-ok || echo home-gone)|$(tw_count)" "kept|home-ok|0"
+    assert_contains "rm of \$HOME returns 1" "$tw_o" "rc=1"
+    tw_o=$(tw 'rm -rf /; print rc=$?')
+    assert_contains "rm -rf / is refused" "$tw_o" "rc=1"
+    tw_o=$(tw 'rm -rf "$HOME/"; print rc=$?')
+    assert_contains "rm of \$HOME/ with a trailing slash is refused" "$tw_o" "rc=1"
+    tw_o=$(tw 'ln -s "$HOME" lnk; rm lnk; print rc=$?')
+    assert_eq "rm of a symlink that points at \$HOME removes the link only" \
+        "$tw_o|$([[ -L $tw_root/w/lnk ]] && echo link-left || echo link-gone)|$([[ -d $tw_root/home ]] && echo home-ok || echo home-gone)" "rc=0|link-gone|home-ok"
+    tw_reset
+    tw_o=$(tw 'mkdir -p "$HOME/dd"; print a >"$HOME/dd/f1"; print b >"$HOME/dd/f2"; rm -rf "$HOME"/dd/*; print rc=$?')
+    assert_contains "rm -rf ~/dd/* (children) is allowed" "$tw_o" "rc=0"
+    assert_eq "rm -rf ~/dd/* trashed both children" "$(tw_count)" "2"
+    tw_reset
+    tw_o=$(tw 'mkdir d1; rm d1; print rc=$?')
+    assert_eq "rm of a directory without -r is trashed (deliberate)" "$tw_o|$(tw_count)" "rc=0|1"
+    tw_reset
+    tw_o=$(tw 'print a >f; eval "del f"; print rc=$?')
+    assert_eq "del behaves as rm" "$tw_o|$([[ -e $tw_root/w/f ]] && echo kept || echo gone)|$(tw_count)" "rc=0|gone|1"
+    for tw_env in "TERM=dumb" "TERM=xterm-256color" "CLAUDECODE=1" "DOTFILES_AGENT=1"; do
+        tw_reset
+        tw_o=$(TW_ENV="$tw_env" tw 'print a >f; rm f nope; print rc=$?' | command sed "s#$tw_root#R#g")
+        assert_eq "rm output is the same under $tw_env" "$tw_o|$(tw_count)" "rm: cannot remove 'nope': No such file or directory
+rc=1|1"
+    done
+
+    # C1: empty-trash accepts only y, Y, yes, YES
+    tw_reset
+    tw_o=$(tw 'print a >f; rm f; print yolo | empty-trash')
+    assert_eq "empty-trash: 'yolo' does not empty the trash (old code emptied it)" \
+        "$([[ $tw_o == *Cancelled* ]] && echo cancelled || echo other)|$(tw_count)" "cancelled|1"
+    tw_o=$(tw 'print yup | empty-trash')
+    assert_eq "empty-trash: 'yup' does not empty the trash" "$(tw_count)" "1"
+    tw_o=$(tw 'print y | empty-trash')
+    assert_eq "empty-trash: 'y' empties the trash" "$(tw_count)" "0"
+    tw_reset
+    tw_o=$(tw 'print a >f; rm f; print YES | empty-trash')
+    assert_eq "empty-trash: 'YES' empties the trash" "$(tw_count)" "0"
+else
+    echo "  ⚠️  [SKIPPED] real trash-cli tools not installed: the rm/rt/empty-trash round trips did not run"
+fi
+
+# B1: no trash tool at all, rm falls back to an interactive rm that -f cannot silence
+tw_farm="$tw_root/farm"
+tw_reset
+mkdir -p "$tw_farm" && ln -s /usr/bin/rm "$tw_farm/rm" && ln -s /usr/bin/yes "$tw_farm/yes"
+tw_fb() {  # $1 = answers piped to rm, $2 = rm command line; runs in $tw_root/w with a dir dd and a file ff
+    mkdir -p "$tw_root/w/dd"; print x >"$tw_root/w/dd/in"; print y >"$tw_root/w/ff"
+    env -i PATH="$tw_farm" HOME="$tw_root/home" HAS_TRASH=false HAS_TRASH_PUT=false /usr/bin/timeout 20 /usr/bin/zsh -f -c "
+        source '$DOT_DIR/modules/files/trash.zsh'
+        cd '$tw_root/w'
+        yes $1 | $2" </dev/null >/dev/null 2>&1
+}
+tw_fb n 'rm -rf dd ff'
+assert_eq "fallback rm -rf keeps asking: answering n deletes nothing (old code deleted for real)" \
+    "$([[ -e $tw_root/w/dd/in && -e $tw_root/w/ff ]] && echo kept || echo deleted)" "kept"
+tw_fb n 'rm -f ff'
+assert_eq "fallback rm -f keeps asking (old code deleted ff)" "$([[ -e $tw_root/w/ff ]] && echo kept || echo deleted)" "kept"
+tw_fb n 'rm -fR dd'
+assert_eq "fallback rm -fR (cluster) keeps asking" "$([[ -e $tw_root/w/dd/in ]] && echo kept || echo deleted)" "kept"
+tw_fb n 'rm --force --interactive=never ff'
+assert_eq "fallback rm --force --interactive=never keeps asking" "$([[ -e $tw_root/w/ff ]] && echo kept || echo deleted)" "kept"
+tw_fb y 'rm -f ff'
+assert_eq "fallback rm answering y still removes the file (guards the path)" "$([[ -e $tw_root/w/ff ]] && echo kept || echo deleted)" "deleted"
+tw_fb n 'eval "del ff"'
+assert_eq "fallback del keeps asking" "$([[ -e $tw_root/w/ff ]] && echo kept || echo deleted)" "kept"
+
+command rm -rf "$tw_root"
+unfunction tw tw_count tw_reset tw_fb
 
 # --- Final check: this run printed no "command not found" ----------------------
 # Stop the capture first: tee has then read the whole run, and the log is complete.

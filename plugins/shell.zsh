@@ -16,7 +16,6 @@ if [[ -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then
 
     # Plugins — add what you use
     plugins=(
-        git
         zsh-autosuggestions
         zsh-syntax-highlighting
     )

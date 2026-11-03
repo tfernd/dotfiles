@@ -5,6 +5,7 @@
 # DD_COLOR=1 keeps them when piped),
 # the counters, the fact list and the _dd_* helpers.
 # DD_QUIET=true silences the report (the facts are still recorded).
+# DOTDOCTOR_SNAP_ROOT=<folder> (default /snap) is where check looks for snap runtimes.
 # DOTDOCTOR_NOW=<epoch> overrides "now" (the test suite uses it).
 # DOTDOCTOR_PY_ROOTS=<folders> sets where the Python brotli search looks
 # (space-separated absolute paths, default $HOME).
@@ -108,13 +109,15 @@ _dd_line() {
     fi
 }
 
-# _dd_advisory <label> <key> <installed> [note]
+# _dd_advisory <label> <key> <installed> [note] [publisher]
+# With a fifth argument "publisher" (a runtime only its publisher can rebuild), an
+# affected version warns instead of failing and the note is dropped.
 # Compares one installed version with the fixed releases in versions.toml [fixes].
 # A fix counts only on the same release line (the first two components).
 # With no fix on that line: inside the "affected" range (inclusive, sort -V) it
 # fails; outside it, or with no range, it only warns.
 _dd_advisory() {
-    local label="$1" key="$2" installed="$3" note="${4:-}"
+    local label="$1" key="$2" installed="$3" note="${4:-}" publisher="${5:-}"
     if [[ -z "$installed" ]]; then
         [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} %s  not installed here\n" "$label"
         return 0
@@ -140,7 +143,9 @@ _dd_advisory() {
         else
             local ends
             ends=$(_dd_quarantine_end "${rd[i]}")
-            if [[ "$(_dd_day "$DD_NOW")" < "$ends" ]]; then
+            if [[ "$publisher" == publisher ]]; then
+                _dd_warn "$label $installed is affected by $cve: the fix (${fx[i]}) is the publisher's; not in your channel yet. Run dotdoctor update to see if one is offered"
+            elif [[ "$(_dd_day "$DD_NOW")" < "$ends" ]]; then
                 _dd_fail "$label $installed  affected by $cve; fix ${fx[i]} is quarantined until $ends  $note"
             else
                 _dd_fail "$label $installed  affected by $cve: upgrade to ${fx[i]}  $note"
@@ -154,10 +159,23 @@ _dd_advisory() {
     if [[ -n "$low" && -n "$high" ]] \
         && [[ "$(print -l "$low" "$installed" | sort -V | head -1)" == "$low" ]] \
         && [[ "$(print -l "$installed" "$high" | sort -V | head -1)" == "$installed" ]]; then
-        _dd_fail "$label $installed  affected; no fix on the $line line: move to a fixed line: $fixed  ($cve) $note"
+        if [[ "$publisher" == publisher ]]; then
+            _dd_warn "$label $installed is affected by $cve: no fix on the $line line; the fix ($fixed) is the publisher's. Run dotdoctor update to see if one is offered"
+        else
+            _dd_fail "$label $installed  affected; no fix on the $line line: move to a fixed line: $fixed  ($cve) $note"
+        fi
         return 0
     fi
     _dd_warn "$label $installed  no fix listed for release line $line ($cve): check the advisory  $note"
+}
+
+# _dd_hint_subcommand <arg>: after an unknown-option error, names the subcommand
+# the argument was meant to be, when it is one.
+_dd_hint_subcommand() {
+    case "$1" in
+        check|scan|update|clean|help) echo "Did you mean: dotdoctor $1 ?" ;;
+    esac
+    return 0
 }
 
 # _dd_changelog_cite <changelog.gz> <cve>: the first bullet line (" * " or " - ")

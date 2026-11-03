@@ -23,29 +23,53 @@ if [[ "$HAS_TRASH" == "true" ]]; then
             args+=("$arg")
         done
 
-        local existing=() item
+        if (( ${#args[@]} == 0 )); then
+            [[ "$force" == "true" ]] && return 0
+            print -r -u2 -- "rm: missing operand"
+            return 1
+        fi
+
+        # Refuse the whole run before anything moves; `rm -rf ~/*` expands to children and is fine.
+        # A symlink is judged by its own path (removing it removes the link), anything else by its real path.
+        local item abs real
         for item in "${args[@]}"; do
-            [[ -e "$item" || -L "$item" ]] && existing+=("$item")
+            abs=${item:a}
+            if [[ -L "$item" ]]; then real=$abs; else real=${item:A}; fi
+            if [[ "$item" == (.|..|*/.|*/..) || "$abs" == / || "$real" == / \
+                || ( -n "$HOME" && ( "$abs" == "${HOME:a}" || "$real" == "${HOME:A}" ) ) ]]; then
+                print -r -u2 -- "❌ rm: refusing to remove '$item'"
+                return 1
+            fi
         done
 
-        local targets=("${existing[@]}")
-        # Nothing exists: let the trash tool print its "not found" error
-        if (( ${#targets[@]} == 0 )) && [[ "$force" == "false" ]]; then
-            targets=("${args[@]}")
-        fi
-        (( ${#targets[@]} > 0 )) || return 0
+        # A directory without -r is trashed too (deliberate: it is recoverable, unlike real rm's refusal).
+        local existing=() missing_rc=0
+        for item in "${args[@]}"; do
+            if [[ -e "$item" || -L "$item" ]]; then
+                existing+=("$item")
+            elif [[ "$force" == "false" ]]; then
+                print -r -u2 -- "rm: cannot remove '$item': No such file or directory"
+                missing_rc=1
+            fi
+        done
 
+        (( ${#existing[@]} > 0 )) || return $missing_rc
+
+        local rc=0
         if [[ "$HAS_TRASH_PUT" == "true" ]]; then
-            command trash-put -- "${targets[@]}"
+            command trash-put -- "${existing[@]}" || rc=$?
         else
-            command trash "${targets[@]}"
+            command trash "${existing[@]}" || rc=$?
         fi
+        (( rc == 0 )) || return $rc
+        return $missing_rc
     }
     alias del='rm'
 
     if [[ "$HAS_TRASH_PUT" == "true" ]]; then
         alias rl='trash-list'
 
+        # A name with a newline in it breaks the line-based parsing below (limitation).
         function rt() {
             local entries=$(trash-list 2>/dev/null)
             if [[ -z "$entries" ]]; then
@@ -59,56 +83,113 @@ if [[ "$HAS_TRASH" == "true" ]]; then
                 return
             fi
 
-            local selected=$(echo "$entries" | fzf --height 60% --reverse --cycle \
-                --border=rounded --info=inline \
+            # Entries are identified by their position, never by their text (a path can be a prefix of another).
+            local -a lines match
+            lines=("${(@f)entries}")
+            local numbered="" n
+            for (( n = 1; n <= ${#lines[@]}; n += 1 )); do
+                numbered+="$n"$'\t'"${lines[n]}"$'\n'
+            done
+
+            local selected=$(print -rn -- "$numbered" | fzf --height 60% --reverse --cycle \
+                --border=rounded --info=inline --delimiter=$'\t' --with-nth=2.. \
                 --header "Select file to restore (ESC to cancel)" \
-                --preview 'echo {}' --preview-window=down:3:wrap)
+                --preview 'echo {2..}' --preview-window=down:3:wrap)
 
             [[ -n "$selected" ]] || { echo "Cancelled."; return 0; }
 
-            # Extract the original path from trash-list output (format: "date time path")
-            local orig_path=$(echo "$selected" | awk '{$1=""; $2=""; print}' | sed 's/^  //')
+            local idx=${selected%%$'\t'*}
+            if [[ "$idx" != <-> ]] || (( idx < 1 || idx > ${#lines[@]} )); then
+                echo "❌ Could not find entry in trash."
+                return 1
+            fi
+            local line=${lines[idx]}
 
-            echo -e "📂 Restore: \033[1;33m$orig_path\033[0m"
+            # trash-list prints "date time path"
+            local when orig
+            if [[ "$line" =~ '^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}) (.*)$' ]]; then
+                when=$match[1]
+                orig=$match[2]
+            else
+                echo "❌ Could not read the trash entry."
+                return 1
+            fi
+            # Which copy of an identical line this is (same path trashed in the same second).
+            local nth=1
+            for (( n = 1; n < idx; n += 1 )); do
+                [[ "${lines[n]}" == "$line" ]] && nth=$(( nth + 1 ))
+            done
+
+            echo -e "📂 Restore: \033[1;33m$orig\033[0m"
             echo ""
             echo "  1) Restore to original location"
             echo "  2) Restore to current directory"
             echo "  3) Cancel"
             echo ""
             echo -n "Choice [1/2/3]: "
+            local choice
             read -r choice
 
+            local base=${orig:t} dest=""
             case "$choice" in
-                1)
-                    # Feed the index to trash-restore
-                    local idx=$(trash-list 2>/dev/null | grep -nF "$selected" | head -1 | cut -d: -f1)
-                    if [[ -n "$idx" ]]; then
-                        echo "$((idx - 1))" | trash-restore 2>/dev/null
-                        echo "✅ Restored to original location."
-                    else
-                        echo "❌ Could not find entry in trash."
-                    fi
-                    ;;
-                2)
-                    local basename=$(basename "$orig_path")
-                    local idx=$(trash-list 2>/dev/null | grep -nF "$selected" | head -1 | cut -d: -f1)
-                    if [[ -n "$idx" ]]; then
-                        echo "$((idx - 1))" | trash-restore 2>/dev/null
-                        # Move from original location to current directory
-                        if [[ -e "$orig_path" ]]; then
-                            mv "$orig_path" "./$basename"
-                            echo "✅ Restored to ./$basename"
-                        else
-                            echo "✅ Restored (check original location)."
-                        fi
-                    else
-                        echo "❌ Could not find entry in trash."
-                    fi
-                    ;;
-                *)
-                    echo "Cancelled."
-                    ;;
+                1) ;;
+                2) dest="$PWD/$base" ;;
+                *) echo "Cancelled."; return 0 ;;
             esac
+
+            if [[ -e "$orig" || -L "$orig" ]]; then
+                echo "❌ $orig already exists; nothing restored."
+                return 1
+            fi
+            if [[ -n "$dest" && ( -e "$dest" || -L "$dest" ) ]]; then
+                echo "❌ ./$base already exists; nothing restored."
+                return 1
+            fi
+
+            # trash-restore PATH lists the entries under PATH whatever the current directory is, so its
+            # own listing gives the index to feed it. Empty input makes it list and exit.
+            local listing=$(print -r -- "" | trash-restore "$orig" 2>/dev/null)
+            local -a rows
+            rows=("${(@f)listing}")
+            local row ridx="" seen=0
+            for row in "${rows[@]}"; do
+                if [[ "$row" =~ '^ *([0-9]+) ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}) (.*)$' ]] \
+                    && [[ "$match[2]" == "$when" && "$match[3]" == "$orig" ]]; then
+                    seen=$(( seen + 1 ))
+                    (( seen == nth )) && ridx=$match[1]
+                fi
+            done
+            if [[ -z "$ridx" ]]; then
+                echo "❌ Could not find entry in trash."
+                return 1
+            fi
+
+            if ! print -r -- "$ridx" | trash-restore "$orig" >/dev/null 2>&1; then
+                echo "❌ Could not restore from trash."
+                return 1
+            fi
+
+            # Trust the filesystem and the trash, not the exit status.
+            local after=$(trash-list 2>/dev/null)
+            local -a after_lines
+            after_lines=("${(@f)after}")
+            local after_count=${#after_lines[@]}
+            [[ -z "$after" ]] && after_count=0
+            if [[ ! -e "$orig" && ! -L "$orig" ]] || (( after_count != ${#lines[@]} - 1 )); then
+                echo "❌ Restore did not complete; check $orig and the trash."
+                return 1
+            fi
+
+            if [[ -z "$dest" ]]; then
+                echo "✅ Restored to original location."
+                return 0
+            fi
+            if mv -n -- "$orig" "$dest" && [[ -e "$dest" || -L "$dest" ]] && [[ ! -e "$orig" && ! -L "$orig" ]]; then
+                echo "✅ Restored to ./$base"
+            else
+                echo "❌ Restored to $orig, but could not move it to ./$base"
+                return 1
+            fi
         }
 
         function empty-trash() {
@@ -117,7 +198,6 @@ if [[ "$HAS_TRASH" == "true" ]]; then
                 echo "🗑️  Trash is empty."
                 return 0
             fi
-            local size=$(trash-list 2>/dev/null | awk '{print $3}' | paste -sd+ | bc 2>/dev/null || echo "?")
             echo -e "🗑️  \033[1;33mTrash contains $count file(s)\033[0m"
             echo ""
             trash-list 2>/dev/null | head -20
@@ -125,18 +205,41 @@ if [[ "$HAS_TRASH" == "true" ]]; then
             echo ""
             echo -n "Empty trash permanently? (y/N): "
             read -r confirm
-            if [[ "$confirm" =~ ^[yY] ]]; then
-                trash-empty
-                echo "✅ Trash emptied."
+            if [[ "$confirm" == (y|Y|yes|YES) ]]; then
+                if trash-empty; then
+                    echo "✅ Trash emptied."
+                else
+                    echo "❌ Could not empty the trash."
+                    return 1
+                fi
             else
                 echo "Cancelled."
             fi
         }
     else
+        # Only the `trash` command exists here: rm is a plain alias, so `rm -f missing` exits 74
+        # and rl, rt and empty-trash are not defined.
         alias rm='trash'
         alias del='trash'
     fi
 else
-    alias rm='rm -i'
-    alias del='rm -i'
+    # No trash tool: keep rm interactive. -f (and -I, --interactive=never) would override -i
+    # and delete for real, so they are dropped before the call.
+    unalias rm del 2>/dev/null
+    function rm() {
+        local args=() arg opts_done=false
+        for arg in "$@"; do
+            if [[ "$opts_done" == "false" ]]; then
+                case "$arg" in
+                    --)            opts_done=true ;;
+                    --force|--interactive*) continue ;;
+                    --*)           ;;
+                    -?*)           arg=${arg//[fI]/}; [[ "$arg" == "-" ]] && continue ;;
+                esac
+            fi
+            args+=("$arg")
+        done
+        command rm -i "${args[@]}"
+    }
+    alias del='rm'
 fi

@@ -15,3 +15,6 @@ alias sudok='sudo -k && echo "🔒 Sudo credentials revoked."'
 # --- SSH shortcuts ---
 alias ssh-login='eval "$(ssh-agent -s)" &>/dev/null && ssh-add ~/.ssh/id_ed25519 && echo "✅ SSH agent ready (key loaded)"'
 alias ssh-test='ssh -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | head -1'
+
+# --- GitHub ---
+[[ "$HAS_GH" == "true" ]] && alias ghv='gh repo view --web'

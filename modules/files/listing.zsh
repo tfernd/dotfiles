@@ -1,5 +1,5 @@
 # ============================================================================
-# FILE LISTING & READING (ls, cat)
+# FILE LISTING, READING & NAVIGATION (ls, cat, ..)
 # ============================================================================
 
 # --- File Listing (eza or platform fallback) ---
@@ -40,3 +40,8 @@ if [[ "$HAS_BAT" == "true" ]]; then
     [[ "$HAS_BATCAT" == "true" ]] && alias bat='batcat'
     alias cat='bat --style=plain --paging=never'
 fi
+
+# --- Navigation ---
+alias ..='cd ..'
+alias '~'='cd ~'
+alias -- -='cd -'

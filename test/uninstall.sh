@@ -21,7 +21,7 @@ echo "  • All pinned binaries from ~/.local/bin"
 echo "  • Oh My Zsh (~/.oh-my-zsh)"
 echo "  • Legacy ~/.dotfiles copy (only if you answer y at its prompt)"
 echo "  • Tool caches (~/.cache/dotfiles_tools, starship, zoxide, atuin, gh)"
-echo "  • Starship / Atuin / Zellij configs"
+echo "  • Starship / Atuin configs"
 echo "  • core/init.zsh loader line(s) in ~/.zshrc (any path)"
 echo ""
 echo -e "\033[1;33mIt will NOT remove:\033[0m"
@@ -43,7 +43,7 @@ echo ""
 
 # --- Remove pinned binaries ---
 echo "🗑️  Removing pinned binaries from ~/.local/bin..."
-TOOLS=(starship rg uv zoxide delta eza bat xh yq bun atuin zellij)
+TOOLS=(starship rg uv zoxide delta eza bat bun atuin)
 for tool in "${TOOLS[@]}"; do
     if [[ -f "$HOME/.local/bin/$tool" ]]; then
         rm -f "$HOME/.local/bin/$tool"
@@ -88,9 +88,7 @@ rm -f "$HOME/.cache/gh_completion.zsh"
 # --- Remove deployed configs ---
 rm -f "$HOME/.config/starship.toml"
 rm -f "$HOME/.config/atuin/config.toml"
-rm -f "$HOME/.config/zellij/config.kdl"
 rmdir "$HOME/.config/atuin" 2>/dev/null || true
-rmdir "$HOME/.config/zellij" 2>/dev/null || true
 
 # --- Remove the core/init.zsh loader from .zshrc (any path) ---
 # Same test install.sh uses to detect an existing loader. Only ~/.zshrc is edited.

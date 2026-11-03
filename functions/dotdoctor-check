@@ -5,6 +5,7 @@
 # with --latest (runs update-versions.sh: newest releases past the .freshness window) or
 # --advisories (asks OSV.dev about the [osv] tools at their installed versions).
 # Any other argument is an error.
+# DOTDOCTOR_SNAP_ROOT=<folder> (default /snap) is where snap runtimes are looked up.
 # DOTDOCTOR_PY_ROOTS=<folders> (space-separated, default $HOME) is where the
 # Python brotli search looks, 10 levels deep. Trashed copies are never counted.
 # Node and Bun copies on disk run only when you own them and no one else can
@@ -12,15 +13,16 @@
 # or, for a uv tool's Node, from its package metadata (never run).
 # ============================================================================
 
+dotdoctor-lib
+
 local arg
 for arg in "$@"; do
     if [[ "$arg" != --latest && "$arg" != --advisories ]]; then
         echo "❌ unknown option: $arg (usage: dotdoctor check [--latest] [--advisories])"
+        _dd_hint_subcommand "$arg"
         return 1
     fi
 done
-
-dotdoctor-lib
 
 [[ -f "$DD_TOML" ]] || { echo "❌ versions.toml not found: $DD_TOML"; return 1; }
 [[ -n "$DD_QUARANTINE_DAYS" ]] || { echo "❌ $DOTFILES_DIR/.freshness is missing or holds no number of days"; return 1; }
@@ -31,7 +33,7 @@ echo -e "${DD_CYN}==============================================================
 
 # --- Pinned tools: installed version against versions.toml -----------------
 _dd_head "Pinned tools (versions.toml [tools])"
-local tool pinned installed released age line today rel_epoch pin_bad msg
+local tool pinned installed released age line today rel_epoch pin_bad msg dd_next=""
 today=$(_dd_epoch "$(_dd_day "$DD_NOW")")
 for tool in ${(f)"$(sed -n '/^\[tools\]/,/^\[/p' "$DD_TOML" | command grep -E '^[a-z]' | sed -E 's/ *=.*//')"}; do
     pinned=$(_dd_field "$tool" version)
@@ -66,10 +68,13 @@ for tool in ${(f)"$(sed -n '/^\[tools\]/,/^\[/p' "$DD_TOML" | command grep -E '^
         fi
     elif [[ "$(print -l "$pinned" "$installed" | command sort -V | command tail -1)" == "$installed" ]]; then
         _dd_warn "$line  newer than the pin: bump the pin with update-versions.sh once the release is ${DD_QUARANTINE_DAYS}+ days old"
+        dd_next=true
     elif [[ "$pin_bad" == true ]]; then
         _dd_warn "$line  older than the pin; the pin is affected, so do not run install.sh until it is bumped"
+        dd_next=true
     else
         _dd_warn "$line  differs from the pin: run install.sh"
+        dd_next=true
     fi
     for msg in "${DD_PIN_MSGS[@]}"; do
         _dd_fail "$msg"
@@ -78,7 +83,7 @@ done
 
 # --- Known advisories: installed versions against versions.toml [fixes] -----
 _dd_head "Known advisories (versions.toml [fixes])"
-local curl_brotli dist pyver found=0 cve cite lib_ver lib_doc node_here bun_here real label ver rel name note
+local curl_brotli dist pyver found=0 cve cite lib_ver lib_doc node_here bun_here real label ver rel name note before
 local f
 local -a node_copies bun_copies snap_libs flatpak_libs parts
 local -A seen=()
@@ -163,19 +168,19 @@ done
 
 # Snap and Flatpak runtimes ship their own libbrotli, so the publisher must update
 # them. The version comes from the file name (libbrotlidec.so.1.1.0 gives 1.1.0).
-snap_libs=(/snap/*/current/usr/lib/*/libbrotlidec.so.1.*.*(N))
+snap_libs=(${DOTDOCTOR_SNAP_ROOT:-/snap}/*/current/usr/lib/*/libbrotlidec.so.1.*.*(N))
 for f in "${snap_libs[@]}"; do
     _dd_in_trash "$f" && continue
-    rel=${f#/snap/}
+    rel=${f#${DOTDOCTOR_SNAP_ROOT:-/snap}/}
     name=${rel%%/*}
     label="snap $name"
     ver=${${f:t}#libbrotlidec.so.}
-    cite=$(_dd_changelog_cite "/snap/$name/current/usr/share/doc/libbrotli1/changelog.Debian.gz" "$cve")
+    cite=$(_dd_changelog_cite "${DOTDOCTOR_SNAP_ROOT:-/snap}/$name/current/usr/share/doc/libbrotli1/changelog.Debian.gz" "$cve")
     if [[ -n "$cite" ]]; then
         _dd_fact advisory libbrotli "$ver"
         _dd_ok "$label libbrotli $ver  patched by the snap (changelog: $cite)"
     else
-        _dd_advisory "$label" libbrotli "$ver" "update with: sudo snap refresh"
+        _dd_advisory "$label" libbrotli "$ver" "" publisher
     fi
 done
 flatpak_libs=(
@@ -189,9 +194,9 @@ for f in "${flatpak_libs[@]}"; do
     parts=(${(s:/:)rel})
     ver=${${f:t}#libbrotlidec.so.}
     if [[ "$f" == /var/lib/flatpak/* ]]; then
-        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (system)" libbrotli "$ver" "update with: sudo flatpak update"
+        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (system)" libbrotli "$ver" "" publisher
     else
-        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (user)" libbrotli "$ver" "update with: flatpak update --user"
+        _dd_advisory "flatpak ${parts[1]}/${parts[3]} (user)" libbrotli "$ver" "" publisher
     fi
 done
 local py_label="${DOTDOCTOR_PY_ROOTS:-$HOME}"
@@ -221,6 +226,9 @@ else
     echo -e "${DD_RED}  ❌ ${DD_FAILS} failing check(s), ${DD_WARNS} item(s) to review${DD_RST}"
 fi
 echo -e "${DD_CYN}=================================================================${DD_RST}\n"
+if [[ "$dd_next" == true ]]; then
+    print -r -- "Next: dotdoctor update --apply"
+fi
 
 if [[ " $* " == *" --latest "* ]]; then
     echo -e "${DD_DIM}Asking GitHub for the newest releases ${DD_QUARANTINE_DAYS}+ days old (update-versions.sh)...${DD_RST}"

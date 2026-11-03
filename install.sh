@@ -12,12 +12,23 @@
 #   --no-shell  do not start a new zsh at the end.
 #   --tools-only  only step 5, the pinned tools: no apt, no sudo, no doctor, no new shell
 #                 (dotdoctor update --apply uses it).
+# Output: one line per step, detail lines only for an action or a problem. NO_COLOR or a
+# piped stdout turns colour off.
 # ============================================================================
 set -euo pipefail
 
-echo -e "\n\033[1;36m=================================================================\033[0m"
-echo -e "\033[1;35m  🚀 DOTFILES BARE-METAL BOOTSTRAP\033[0m"
-echo -e "\033[1;36m=================================================================\033[0m\n"
+SECONDS=0
+STEP_TOTAL=7
+
+# Colour only on a terminal, and never with NO_COLOR set.
+if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]]; then
+    USE_COLOR=1
+    C_CYN=$'\033[1;36m' C_GRN=$'\033[1;32m' C_YEL=$'\033[1;33m' C_RED=$'\033[1;31m'
+    C_MAG=$'\033[1;35m' C_DIM=$'\033[38;5;244m' C_RST=$'\033[0m'
+else
+    USE_COLOR=0
+    C_CYN="" C_GRN="" C_YEL="" C_RED="" C_MAG="" C_DIM="" C_RST=""
+fi
 
 # The repo this script lives in. It is used in place: no copy is made.
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +53,39 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# --- Output helpers ---
+# Counters for the final summary: packages and tools together.
+N_INSTALLED=0 N_UPGRADED=0 N_UNCHANGED=0
+STEP_NO="" STEP_NAME="" STEP_T0=0
+
+_step_begin() { STEP_NO="$1" STEP_NAME="$2" STEP_T0=$SECONDS; }
+
+# Prints "▸ [n/7] Name ....... <icon> text (Ns)". $1 is ok, warn or fail.
+_step_end() {
+    local icon="✅" col="$C_GRN" dots
+    [[ "$1" == warn ]] && { icon="⚠️ "; col="$C_YEL"; }
+    [[ "$1" == fail ]] && { icon="❌"; col="$C_RED"; }
+    printf -v dots '%*s' "$(( 28 - ${#STEP_NAME} ))" ''
+    dots="${dots// /.}"
+    printf '%s▸ [%s/%s]%s %s %s%s%s %s %s%s%s %s(%ss)%s\n' \
+        "$C_CYN" "$STEP_NO" "$STEP_TOTAL" "$C_RST" "$STEP_NAME" "$C_DIM" "$dots" "$C_RST" \
+        "$icon" "$col" "$2" "$C_RST" "$C_DIM" "$(( SECONDS - STEP_T0 ))" "$C_RST"
+}
+
+# Runs a command with its output in a log; the log is shown only by _show_log (on failure).
+RUN_LOG=""
+_run_logged() {
+    [[ -n "$RUN_LOG" ]] || RUN_LOG=$(mktemp "/tmp/dotfiles-install-XXXXXX")
+    "$@" >"$RUN_LOG" 2>&1
+}
+_show_log() { [[ -s "$RUN_LOG" ]] && sed 's/^/    /' "$RUN_LOG" | tail -n 25 || true; }
+
+_summary() {
+    printf '%s  %d installed · %d upgraded · %d unchanged · %d failed%s   %s(%ss)%s\n' \
+        "$C_DIM" "$N_INSTALLED" "$N_UPGRADED" "$N_UNCHANGED" "${#FAILED_TOOLS[@]}" "$C_RST" \
+        "$C_DIM" "$SECONDS" "$C_RST"
+}
+
 # ============================================================================
 # STEP 0: Detect platform
 # ============================================================================
@@ -62,25 +106,75 @@ case "$OSTYPE" in
         exit 1
         ;;
 esac
-echo -e "🖥️  Platform detected: \033[1;33m${PLATFORM}\033[0m\n"
+_flags=""
+[[ "$FORCE" -eq 1 ]] && _flags="$_flags --force"
+[[ "$TOOLS_ONLY" -eq 1 ]] && _flags="$_flags --tools-only"
+echo ""
+printf '%s🚀 Dotfiles install%s  ·  platform: %s%s%s%s\n\n' "$C_MAG" "$C_RST" "$C_YEL" "$PLATFORM" "$C_RST" "$_flags"
 
 # Homebrew formulae for macOS: step 1 installs them, and so does --tools-only (brew provides
 # most tools there).
 BREW_FORMULAE=(
     zsh curl wget coreutils
-    starship zoxide atuin zellij bat eza trash-cli yq xh fzf
+    starship zoxide atuin bat eza trash-cli fzf
     git git-delta jq bun hashicorp/tap/terraform hashicorp/tap/terraform-ls
     ripgrep fd just lazygit bottom yazi
     p7zip zip unzip xz zstd unar
     zsh-autosuggestions zsh-syntax-highlighting
 )
 
+# True when line $2 is in the newline-separated list $1.
+_in_list() { [[ $'\n'"$1"$'\n' == *$'\n'"$2"$'\n'* ]]; }
+
+# Installs the formulae of BREW_FORMULAE that brew does not list yet. brew's own chatter goes to a
+# log, shown only on failure.
+_brew_ensure() {
+    local have f missing=()
+    have=$(brew list --formula -1 2>/dev/null || true)
+    for f in "${BREW_FORMULAE[@]}"; do
+        if ! _in_list "$have" "${f##*/}"; then missing+=("$f"); fi
+    done
+    N_UNCHANGED=$(( N_UNCHANGED + ${#BREW_FORMULAE[@]} - ${#missing[@]} ))
+    [[ ${#missing[@]} -gt 0 ]] || return 0
+    echo "  📦 brew install: ${missing[*]}"
+    if ! _run_logged brew install "${missing[@]}"; then
+        _show_log
+        echo "  ❌ brew install failed"
+        return 1
+    fi
+    N_INSTALLED=$(( N_INSTALLED + ${#missing[@]} ))
+}
+
 # Steps 1 to 4 set up the system; --tools-only skips them.
 if [[ "$TOOLS_ONLY" -eq 0 ]]; then
     # ============================================================================
-    # STEP 1: Install ALL system packages (assumes user has NOTHING)
+    # STEP 1: System packages. Only what is missing is installed; apt update runs
+    # only then, and only when the package lists are older than a day.
     # ============================================================================
-    echo -e "\033[1;34m📦 STEP 1: Installing system packages...\033[0m\n"
+    _step_begin 1 "System packages"
+
+    # deb822 .sources files (Pop!_OS, Ubuntu 24.04+) name components on a "Components:" line.
+    _has_universe() { grep -Eqr '^(deb|Components:).*[[:space:]]universe([[:space:]]|$)' "$@" 2>/dev/null; }
+
+    # Prints the packages among "$@" that dpkg does not list as installed, one per line.
+    _missing_pkgs() {
+        local have p
+        have=$(dpkg-query -W -f='${Package} ${Status}\n' "$@" 2>/dev/null | awk '$NF == "installed" {print $1}' || true)
+        for p in "$@"; do
+            if ! _in_list "$have" "$p"; then printf '%s\n' "$p"; fi
+        done
+    }
+
+    # True when apt refreshed its lists within the last day.
+    _apt_fresh() {
+        [[ -n "$(find /var/lib/apt/periodic/update-success-stamp /var/cache/apt/pkgcache.bin \
+            -mmin -1440 -print -quit 2>/dev/null || true)" ]]
+    }
+
+    _apt_update() {
+        echo "  📦 apt update"
+        _run_logged sudo apt-get update -qq || { _show_log; echo "  ❌ apt update failed"; return 1; }
+    }
 
     if [[ "$PLATFORM" == "macos" ]]; then
         if ! xcode-select -p &>/dev/null; then
@@ -103,69 +197,105 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
             exit 1
         fi
 
-        echo "📦 Installing tools via Homebrew..."
-        brew install "${BREW_FORMULAE[@]}"
-        brew install --cask font-fira-code-nerd-font 2>/dev/null || true
-
+        _before=$N_INSTALLED
+        _brew_ensure
+        if [[ "$N_INSTALLED" -gt "$_before" ]]; then
+            _step_end ok "$(( N_INSTALLED - _before )) installed via Homebrew"
+        else
+            _step_end ok "up to date"
+        fi
     else
-        echo "📦 Updating APT package lists..."
-        sudo apt update -y
+        REQUIRED_PKGS=(
+            zsh git curl wget build-essential ca-certificates gnupg lsb-release procps lsof bc jq
+            fontconfig xdg-utils trash-cli xclip p7zip-full unzip zip gzip tar unrar-free xz-utils zstd bzip2
+        )
+        PLUGIN_PKGS=(zsh-autosuggestions zsh-syntax-highlighting)
+        WSL_PKGS=()
+        [[ "$PLATFORM" == "wsl" ]] && WSL_PKGS=(wslu)
 
-        # deb822 .sources files (Pop!_OS, Ubuntu 24.04+) name components on a "Components:" line.
-        _has_universe() { grep -Eqr '^(deb|Components:).*[[:space:]]universe([[:space:]]|$)' "$@" 2>/dev/null; }
-        if command -v add-apt-repository &>/dev/null; then
-            if ! _has_universe /etc/apt/sources.list /etc/apt/sources.list.d/; then
-                echo "  Enabling universe repository..."
-                sudo add-apt-repository -y universe 2>/dev/null || true
-                sudo apt update -y
+        _all_pkgs=("${REQUIRED_PKGS[@]}" "${PLUGIN_PKGS[@]}")
+        [[ ${#WSL_PKGS[@]} -gt 0 ]] && _all_pkgs+=("${WSL_PKGS[@]}")
+        _missing_all=()
+        while IFS= read -r _p; do
+            if [[ -n "$_p" ]]; then _missing_all+=("$_p"); fi
+        done < <(_missing_pkgs "${_all_pkgs[@]}")
+
+        # Which missing packages are required, and which belong to an optional group.
+        _miss_req=() _miss_plug=() _miss_wsl=()
+        if [[ ${#_missing_all[@]} -gt 0 ]]; then
+            for _p in "${_missing_all[@]}"; do
+                if _in_list "$(printf '%s\n' "${PLUGIN_PKGS[@]}")" "$_p"; then _miss_plug+=("$_p")
+                elif [[ ${#WSL_PKGS[@]} -gt 0 ]] && _in_list "$(printf '%s\n' "${WSL_PKGS[@]}")" "$_p"; then _miss_wsl+=("$_p")
+                else _miss_req+=("$_p"); fi
+            done
+        fi
+        N_UNCHANGED=$(( N_UNCHANGED + ${#_all_pkgs[@]} - ${#_missing_all[@]} ))
+
+        if [[ ${#_missing_all[@]} -eq 0 ]]; then
+            _step_end ok "up to date (${#_all_pkgs[@]} packages)"
+        else
+            _need_update=0
+            _apt_fresh || _need_update=1
+            if command -v add-apt-repository &>/dev/null; then
+                if ! _has_universe /etc/apt/sources.list /etc/apt/sources.list.d/; then
+                    echo "  Enabling universe repository..."
+                    sudo add-apt-repository -y universe 2>/dev/null || true
+                    _need_update=1
+                fi
+            fi
+            _updated=0
+            if [[ "$_need_update" -eq 1 ]]; then _apt_update; _updated=1; fi
+
+            # Installs "$@" quietly. A failure with lists not refreshed this run is retried once after apt update.
+            _apt_install() {
+                _run_logged sudo apt-get install -y -qq "$@" && return 0
+                if [[ "$_updated" -eq 0 ]]; then
+                    _apt_update || return 1
+                    _updated=1
+                    _run_logged sudo apt-get install -y -qq "$@" && return 0
+                fi
+                return 1
+            }
+
+            _step_warn=0
+            if [[ ${#_miss_req[@]} -gt 0 ]]; then
+                echo "  📦 apt install: ${_miss_req[*]}"
+                if ! _apt_install "${_miss_req[@]}"; then
+                    _show_log
+                    _step_end fail "apt install failed"
+                    exit 1
+                fi
+                N_INSTALLED=$(( N_INSTALLED + ${#_miss_req[@]} ))
+            fi
+            if [[ ${#_miss_plug[@]} -gt 0 ]]; then
+                echo "  📦 apt install: ${_miss_plug[*]}"
+                if _apt_install "${_miss_plug[@]}"; then
+                    N_INSTALLED=$(( N_INSTALLED + ${#_miss_plug[@]} ))
+                else
+                    echo "  ⚠️  zsh plugins not installed via apt (optional: Step 3 clones them)"
+                    _step_warn=1
+                fi
+            fi
+            if [[ ${#_miss_wsl[@]} -gt 0 ]]; then
+                echo "  📦 apt install: ${_miss_wsl[*]}"
+                if _apt_install "${_miss_wsl[@]}"; then
+                    N_INSTALLED=$(( N_INSTALLED + ${#_miss_wsl[@]} ))
+                else
+                    _step_warn=1
+                fi
+            fi
+            if [[ "$_step_warn" -eq 1 ]]; then
+                _step_end warn "installed, optional packages missing"
+            else
+                _step_end ok "${#_missing_all[@]} installed"
             fi
         fi
-
-        echo ""
-        echo "📦 Installing required system packages..."
-        sudo apt install -y \
-            zsh \
-            git \
-            curl \
-            wget \
-            build-essential \
-            ca-certificates \
-            gnupg \
-            lsb-release \
-            procps \
-            lsof \
-            bc \
-            jq \
-            fontconfig \
-            xdg-utils \
-            trash-cli \
-            xclip \
-            p7zip-full \
-            unzip \
-            zip \
-            gzip \
-            tar \
-            unrar-free \
-            xz-utils \
-            zstd \
-            bzip2
-        sudo apt install -y \
-            zsh-autosuggestions \
-            zsh-syntax-highlighting \
-            2>/dev/null || echo "  ⚠️  zsh plugins not installed via apt (optional: Step 3 clones them)"
-
-        # WSL-specific packages
-        if [[ "$PLATFORM" == "wsl" ]]; then
-            sudo apt install -y wslu 2>/dev/null || true
-        fi
     fi
-
-    echo -e "\n✅ System packages installed.\n"
 
     # ============================================================================
     # STEP 2: Set zsh as default shell
     # ============================================================================
-    echo -e "\033[1;34m🐚 STEP 2: Setting zsh as default shell...\033[0m\n"
+    _step_begin 2 "Default shell"
 
     ZSH_PATH="$(command -v zsh 2>/dev/null || true)"
     if [[ -z "$ZSH_PATH" ]]; then
@@ -180,55 +310,62 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
         fi
         echo "  Setting $ZSH_PATH as default shell..."
         if sudo chsh -s "$ZSH_PATH" "$USER" 2>/dev/null || chsh -s "$ZSH_PATH" 2>/dev/null; then
-            echo "  ✅ Default shell: zsh"
+            _step_end ok "zsh is now the default shell"
         else
             echo "  ⚠️  Could not set zsh as the default shell (optional). Run: chsh -s $ZSH_PATH"
+            _step_end warn "default shell unchanged"
         fi
     else
-        echo "  ✅ zsh is already the default shell"
+        _step_end ok "zsh is the default"
     fi
-    echo ""
 
     # ============================================================================
     # STEP 3: Install Oh My Zsh + plugins
     # ============================================================================
-    echo -e "\033[1;34m🐚 STEP 3: Installing Oh My Zsh...\033[0m\n"
+    _step_begin 3 "Oh My Zsh"
+    _omz_done=()
 
     if [[ ! -f "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then
         echo "  Installing Oh My Zsh (pinned commit)..."
         OMZ_COMMIT="4b657407c98bbc8830ae66c2ac7ff3d737c55a83"  # 2026-08-29
-        git clone --filter=blob:none https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
+        git clone -q --filter=blob:none https://github.com/ohmyzsh/ohmyzsh.git "$HOME/.oh-my-zsh"
         # Full clone already fetched history; only fetch the pinned commit if it isn't present.
         (cd "$HOME/.oh-my-zsh" \
-            && { git cat-file -e "${OMZ_COMMIT}^{commit}" 2>/dev/null || git fetch --depth=1 origin "$OMZ_COMMIT"; } \
-            && git checkout --detach "$OMZ_COMMIT")
+            && { git cat-file -e "${OMZ_COMMIT}^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$OMZ_COMMIT"; } \
+            && git checkout -q --detach "$OMZ_COMMIT")
         OMZ_HEAD="$(git -C "$HOME/.oh-my-zsh" rev-parse HEAD)"
         if [[ "$OMZ_HEAD" != "$OMZ_COMMIT" ]]; then
             echo "❌ FATAL: Oh My Zsh HEAD is ${OMZ_HEAD}, expected ${OMZ_COMMIT}"
             exit 1
         fi
-        echo "  ✅ Oh My Zsh installed (commit: ${OMZ_COMMIT:0:12})"
-    else
-        echo "  ✅ Oh My Zsh already installed"
+        _omz_done+=("Oh My Zsh ${OMZ_COMMIT:0:12}")
     fi
 
     ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
     if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-autosuggestions" ]]; then
         echo "  Cloning zsh-autosuggestions..."
-        git clone --depth=1 --branch v0.7.1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" 2>/dev/null || true
+        git clone -q --depth=1 --branch v0.7.1 https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions" 2>/dev/null || true
+        _omz_done+=("zsh-autosuggestions")
     fi
     if [[ ! -d "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" ]]; then
         echo "  Cloning zsh-syntax-highlighting..."
-        git clone --depth=1 --branch 0.8.0 https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" 2>/dev/null || true
+        git clone -q --depth=1 --branch 0.8.0 https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" 2>/dev/null || true
+        _omz_done+=("zsh-syntax-highlighting")
     fi
-    echo ""
+    if [[ ${#_omz_done[@]} -gt 0 ]]; then
+        N_INSTALLED=$(( N_INSTALLED + ${#_omz_done[@]} ))
+        _step_end ok "installed: ${_omz_done[*]}"
+    else
+        N_UNCHANGED=$(( N_UNCHANGED + 1 ))
+        _step_end ok "up to date"
+    fi
 
     # ============================================================================
     # STEP 4: Install Nerd Fonts
     # ============================================================================
-    echo -e "\033[1;34m🔡 STEP 4: Installing FiraCode Nerd Font...\033[0m\n"
+    _step_begin 4 "FiraCode Nerd Font"
 
-    FONT_VER=$(grep 'firacode-nerd' "$DOTFILES_DIR/versions.toml" | sed -E 's/.*version = "([^"]+)".*/\1/')
+    FONT_VER=$({ grep 'firacode-nerd' "$DOTFILES_DIR/versions.toml" || true; } | sed -E 's/.*version = "([^"]+)".*/\1/')
     if [[ -z "$FONT_VER" ]]; then FONT_VER="3.3.0"; fi
 
     # FiraCode Nerd Font (Linux): download the zip into a temp dir, check it against the GitHub
@@ -278,37 +415,48 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
 
     # The font is optional: the shell works without it, so a failure is a warning (⚠️), not a fatal error.
     if [[ "$PLATFORM" == "macos" ]]; then
-        if brew install --cask font-fira-code-nerd-font; then
-            echo "  ✅ FiraCode Nerd Font installed"
+        _casks=$(brew list --cask -1 2>/dev/null || true)
+        if _in_list "$_casks" "font-fira-code-nerd-font"; then
+            N_UNCHANGED=$(( N_UNCHANGED + 1 ))
+            _step_end ok "already installed"
+        elif _run_logged brew install --cask font-fira-code-nerd-font; then
+            N_INSTALLED=$(( N_INSTALLED + 1 ))
+            _step_end ok "installed"
         else
+            _show_log
             echo "  ⚠️  FiraCode Nerd Font not installed via Homebrew (optional): terminal icons may be missing"
+            _step_end warn "not installed (optional)"
         fi
     else
-        if fc-list : family 2>/dev/null | grep -qi "FiraCode" || [[ -d "$HOME/.local/share/fonts" && $(find "$HOME/.local/share/fonts" -name "*FiraCode*" | head -1) ]]; then
-            echo "  ✅ FiraCode Nerd Font already installed"
+        _fonts=$(fc-list : family 2>/dev/null || true)
+        if [[ "$_fonts" == *[Ff]ira[Cc]ode* ]] || [[ -d "$HOME/.local/share/fonts" && -n "$(find "$HOME/.local/share/fonts" -name "*FiraCode*" -print -quit)" ]]; then
+            N_UNCHANGED=$(( N_UNCHANGED + 1 ))
+            _step_end ok "already installed"
         else
             echo "  Downloading FiraCode Nerd Font v${FONT_VER}..."
             if _install_font "$FONT_VER"; then
-                echo "  ✅ FiraCode Nerd Font v${FONT_VER} installed"
+                N_INSTALLED=$(( N_INSTALLED + 1 ))
+                _step_end ok "v${FONT_VER} installed"
             else
                 echo "  ⚠️  FiraCode Nerd Font v${FONT_VER} not installed (optional): terminal icons may be missing. See the ❌ line above."
+                _step_end warn "not installed (optional)"
             fi
         fi
     fi
-    echo ""
 fi
 
 # ============================================================================
 # STEP 5: Install pinned CLI tools (quarantine + checksum verified)
 # uv, gh: Debian / WSL / macOS. Other tools: Linux binaries.
+# Tools already at their pin print nothing; installs run up to MAX_JOBS at a time.
 # ============================================================================
-echo -e "\033[1;34m🔧 STEP 5: Installing pinned CLI tools...\033[0m\n"
+_step_begin 5 "Pinned tools"
 
 mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 
 if [[ "$TOOLS_ONLY" -eq 1 && "$PLATFORM" == "macos" ]]; then
-    brew install "${BREW_FORMULAE[@]}"
+    _brew_ensure
 fi
 
 ARCH="" YQ_ARCH="" BUN_ARCH="" DELTA_TRIPLE="" UV_TRIPLE="" GH_OS="" GH_ARCH=""
@@ -341,8 +489,8 @@ else
 fi
 
     # Only [tools] and [fonts]: [fixes] and [osv] reuse the names (bun-brotli, uv).
-    _ver() { awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$DOTFILES_DIR/versions.toml" | grep -E "^$1[[:space:]]*=" | sed -E 's/.*version = "([^"]+)".*/\1/'; }
-    _released() { awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$DOTFILES_DIR/versions.toml" | grep -E "^$1[[:space:]]*=" | sed -E 's/.*released = "([^"]+)".*/\1/'; }
+    _ver() { awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$DOTFILES_DIR/versions.toml" | { grep -E "^$1[[:space:]]*=" || true; } | sed -E 's/.*version = "([^"]+)".*/\1/'; }
+    _released() { awk '/^\[/{s = ($0 == "[tools]" || $0 == "[fonts]")} s' "$DOTFILES_DIR/versions.toml" | { grep -E "^$1[[:space:]]*=" || true; } | sed -E 's/.*released = "([^"]+)".*/\1/'; }
 
     # True (0) only when version $1 is strictly newer than $2, by sort -V. An empty version is never newer.
     _is_newer() {
@@ -387,6 +535,7 @@ fi
             || { rm -f "$dest.new"; echo "    ❌ Copy to ~/.local/bin failed for $name"; return 1; }
     }
 
+    # Runs in a background job (see _job_start): prints only ❌ lines, so its log is empty on success.
     _install_bin() {
         local name="$1" url="$2" checksum_url="$3" extract_cmd="$4" binary_path="$5"
         local work
@@ -463,7 +612,56 @@ fi
                 ;;
         esac
         chmod +x "$HOME/.local/bin/$name" || { echo "    ❌ chmod failed for $name"; return 1; }
-        echo "    ✅ $name installed"
+    }
+
+    # --- Parallel installs ---
+    # Downloads are independent, so up to MAX_JOBS _install_bin runs go at once, each with its own log.
+    # Results are reaped oldest first, so the lines print in the order the tools were asked for.
+    # Each job is a full _install_bin: checksum, atomic _place_bin, ❌ lines. A job's exit status is its result.
+    MAX_JOBS=4
+    JOBDIR=""
+    JOB_PID=() JOB_NAME=() JOB_KIND=() JOB_OLD=() JOB_VER=()
+    JOB_N=0 JOB_HEAD=0
+
+    # Waits for the oldest running job and prints its one-line result (the ❌ lines of its log on failure).
+    _job_reap_one() {
+        local i="$JOB_HEAD" rc=0 name
+        name="${JOB_NAME[$i]}"
+        wait "${JOB_PID[$i]}" || rc=$?
+        JOB_HEAD=$(( i + 1 ))
+        if [[ "$rc" -ne 0 ]]; then
+            FAILED_TOOLS+=("$name")
+            printf "  ❌ %-12s failed\n" "$name"
+            cat "$JOBDIR/$name.log"
+            return 0
+        fi
+        case "${JOB_KIND[$i]}" in
+            new)
+                N_INSTALLED=$(( N_INSTALLED + 1 ))
+                printf "  📦 %-12s v%s installed\n" "$name" "${JOB_VER[$i]}" ;;
+            force)
+                N_UPGRADED=$(( N_UPGRADED + 1 ))
+                printf "  🔁 %-12s v%s reinstalled\n" "$name" "${JOB_VER[$i]}" ;;
+            *)
+                N_UPGRADED=$(( N_UPGRADED + 1 ))
+                printf "  ⬆️  %-12s v%s -> v%s\n" "$name" "${JOB_OLD[$i]:-?}" "${JOB_VER[$i]}" ;;
+        esac
+    }
+
+    # $1 kind (new, upgrade, force), $2 installed version, $3 pinned version, then _install_bin's arguments.
+    _job_start() {
+        local kind="$1" old="$2" ver="$3" name="$4"
+        shift 4
+        if [[ -z "$JOBDIR" ]]; then JOBDIR=$(mktemp -d "/tmp/dotfiles-install-XXXXXX"); fi
+        while [[ $(( JOB_N - JOB_HEAD )) -ge "$MAX_JOBS" ]]; do _job_reap_one; done
+        ( _install_bin "$name" "$@" ) >"$JOBDIR/$name.log" 2>&1 &
+        JOB_PID[JOB_N]=$! JOB_NAME[JOB_N]="$name" JOB_KIND[JOB_N]="$kind" JOB_OLD[JOB_N]="$old" JOB_VER[JOB_N]="$ver"
+        JOB_N=$(( JOB_N + 1 ))
+    }
+
+    _jobs_finish() {
+        while [[ "$JOB_HEAD" -lt "$JOB_N" ]]; do _job_reap_one; done
+        if [[ -n "$JOBDIR" ]]; then rm -rf "$JOBDIR"; JOBDIR=""; fi
     }
 
     # Install policy (never downgrade). The copy in ~/.local/bin is the one that counts: it comes first
@@ -471,7 +669,7 @@ fi
     # otherwise keep a newer, unvetted release in place of the pin); dotdoctor clean lists such copies.
     #   no pin in versions.toml yet  -> skipped (update-versions.sh --apply adds the row)
     #   copy newer than the pin      -> kept, even with --force
-    #   copy equal to the pin        -> skipped, or reinstalled with --force
+    #   copy equal to the pin        -> skipped silently, or reinstalled with --force
     #   copy older, or missing       -> installed
     _ensure() {
         local name="$1" cmd="$2" pinned_ver="$3" released_date="$4"
@@ -480,26 +678,31 @@ fi
             printf "  ⏳ %-12s no pin in versions.toml yet (bash update-versions.sh --apply adds it)\n" "$name"
             return 0
         fi
-        _quarantined "$name" "$pinned_ver" "$released_date" || return 0
+        _quarantined "$name" "$pinned_ver" "$released_date" || { N_UNCHANGED=$(( N_UNCHANGED + 1 )); return 0; }
 
-        local cmd_path=""
+        local cmd_path="" kind="new" installed_ver=""
         [[ -x "$HOME/.local/bin/$cmd" ]] && cmd_path="$HOME/.local/bin/$cmd"
 
         if [[ -n "$cmd_path" ]]; then
-            local installed_ver=$("$cmd_path" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+[0-9.]*' | head -1)
+            installed_ver=$("$cmd_path" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+[0-9.]*' | head -1) || installed_ver=""
             if _is_newer "$installed_ver" "$pinned_ver"; then
                 echo "  ⚠️ $name $installed_ver is newer than the pin $pinned_ver: kept (bump the pin when the release passes quarantine)"
+                N_UNCHANGED=$(( N_UNCHANGED + 1 ))
                 return 0
             fi
-            if [[ "$installed_ver" == "$pinned_ver" && "$FORCE" -eq 0 ]]; then
-                printf "  ✅ %-12s v%-10s (up to date)\n" "$name" "$installed_ver"
-                return 0
+            if [[ "$installed_ver" == "$pinned_ver" ]]; then
+                if [[ "$FORCE" -eq 0 ]]; then
+                    N_UNCHANGED=$(( N_UNCHANGED + 1 ))
+                    return 0
+                fi
+                kind="force"
+            else
+                kind="upgrade"
             fi
         fi
 
-        printf "  📦 %-12s installing v%s\n" "$name" "$pinned_ver"
         # One tool failing must not stop the others: it is listed at the end and the run exits 1.
-        _install_bin "$name" "$@" || FAILED_TOOLS+=("$name")
+        _job_start "$kind" "$installed_ver" "$pinned_ver" "$name" "$@"
     }
 
     # YYYY-MM-DD date FRESH_DAYS back (GNU, then BSD). A release is allowed when its date is <= this.
@@ -533,11 +736,7 @@ fi
         echo "  ❌ git is missing or not runnable (Step 1 should have installed it)"
         exit 1
     fi
-    if [[ "$PLATFORM" == "macos" ]]; then
-        printf "  ✅ %-12s v%-10s (via Homebrew)\n" "git" "$_git_ver_now"
-    else
-        printf "  ✅ %-12s v%-10s (via apt)\n" "git" "$_git_ver_now"
-    fi
+    N_UNCHANGED=$(( N_UNCHANGED + 1 ))
 
     # uv (Debian / WSL / macOS)
     v=$(_ver uv); r=$(_released uv)
@@ -592,19 +791,6 @@ if [[ "$PLATFORM" != "macos" ]]; then
         "https://github.com/sharkdp/bat/releases/download/v${v}/bat-v${v}-${ARCH}-unknown-linux-musl.tar.gz" \
         "" "tar" "bat-v${v}-${ARCH}-unknown-linux-musl/bat"
 
-    # xh
-    v=$(_ver xh); r=$(_released xh)
-    _ensure "xh" "xh" "$v" "$r" \
-        "https://github.com/ducaale/xh/releases/download/v${v}/xh-v${v}-${ARCH}-unknown-linux-musl.tar.gz" \
-        "" "tar" "xh-v${v}-${ARCH}-unknown-linux-musl/xh"
-
-    # yq
-    v=$(_ver yq); r=$(_released yq)
-    _ensure "yq" "yq" "$v" "$r" \
-        "https://github.com/mikefarah/yq/releases/download/v${v}/yq_linux_${YQ_ARCH}" \
-        "" \
-        "binary" "yq"
-
     # bun
     v=$(_ver bun); r=$(_released bun)
     _ensure "bun" "bun" "$v" "$r" \
@@ -618,12 +804,6 @@ if [[ "$PLATFORM" != "macos" ]]; then
         "https://github.com/atuinsh/atuin/releases/download/v${v}/atuin-${ARCH}-unknown-linux-musl.tar.gz" \
         "https://github.com/atuinsh/atuin/releases/download/v${v}/atuin-${ARCH}-unknown-linux-musl.tar.gz.sha256" \
         "tar" "atuin-${ARCH}-unknown-linux-musl/atuin"
-
-    # zellij
-    v=$(_ver zellij); r=$(_released zellij)
-    _ensure "zellij" "zellij" "$v" "$r" \
-        "https://github.com/zellij-org/zellij/releases/download/v${v}/zellij-${ARCH}-unknown-linux-musl.tar.gz" \
-        "" "tar" "zellij"
 
     # terraform: HashiCorp's release server, checked against its SHA256SUMS file
     v=$(_ver terraform); r=$(_released terraform)
@@ -661,6 +841,8 @@ if [[ "$PLATFORM" != "macos" ]]; then
     _ensure "yazi" "yazi" "$v" "$r" "gh:sxyazi/yazi|${v}|yazi-${ARCH}-unknown-linux-musl\.zip\$" "" "zip" "yazi"
 fi
 
+_jobs_finish
+
 # Configure delta in git if installed
 if command -v delta &>/dev/null || [[ -x "$HOME/.local/bin/delta" ]]; then
     git config --global core.pager "delta"
@@ -678,20 +860,28 @@ if command -v delta &>/dev/null || [[ -x "$HOME/.local/bin/delta" ]]; then
     fi
 fi
 
+_tools_text="$N_INSTALLED installed · $N_UPGRADED upgraded · $N_UNCHANGED current"
+if [[ ${#FAILED_TOOLS[@]} -gt 0 ]]; then
+    _step_end fail "${#FAILED_TOOLS[@]} failed"
+else
+    _step_end ok "$_tools_text"
+fi
+
 if [[ "$TOOLS_ONLY" -eq 1 ]]; then
     rm -f "$HOME/.cache/dotfiles_tools"
     if [[ ${#FAILED_TOOLS[@]} -gt 0 ]]; then
-        echo -e "\n\033[1;31m❌ Not installed: ${FAILED_TOOLS[*]}\033[0m"
+        echo -e "\n${C_RED}❌ Not installed: ${FAILED_TOOLS[*]}${C_RST}"
         exit 1
     fi
-    echo -e "\n\033[1;32m✅ Pinned tools done.\033[0m Open a new shell (exec zsh) to use them."
+    echo -e "\n${C_GRN}✅ Pinned tools done.${C_RST} Open a new shell (exec zsh) to use them."
     exit 0
 fi
 
 # ============================================================================
 # STEP 6: Load dotfiles in place (no copy), append the ~/.zshrc loader, deploy configs
 # ============================================================================
-echo -e "\n\033[1;34m📂 STEP 6: Wiring dotfiles in place...\033[0m\n"
+_step_begin 6 "Wiring dotfiles"
+_wired=()
 
 # Escapes $1 for use inside a double-quoted zsh string: \ " $ and backtick.
 _dq_escape() { printf '%s' "$1" | sed -e 's/[\\"$`]/\\&/g'; }
@@ -701,7 +891,6 @@ _dq_escape() { printf '%s' "$1" | sed -e 's/[\\"$`]/\\&/g'; }
 _ensure_zshrc_loader() {
     touch "$HOME/.zshrc" || { echo "  ❌ Cannot create or touch $HOME/.zshrc"; return 1; }
     if grep -qF 'core/init.zsh' "$HOME/.zshrc"; then
-        echo "  ✅ ~/.zshrc already sources core/init.zsh"
         return 0
     fi
     local q
@@ -712,80 +901,92 @@ _ensure_zshrc_loader() {
         echo "[ -f \"${q}/core/init.zsh\" ] && source \"${q}/core/init.zsh\""
     } >> "$HOME/.zshrc" || { echo "  ❌ Could not append the loader to $HOME/.zshrc"; return 1; }
     echo "  ✅ Added dotfiles loader to ~/.zshrc (sources $REPO_DIR/core/init.zsh)"
+    _wired+=("~/.zshrc loader")
 }
 _ensure_zshrc_loader
 
-# Deploy starship config (copied from the repo's config/ into ~/.config)
-mkdir -p "$HOME/.config"
-if [[ -f "$DOTFILES_DIR/config/starship.toml" ]]; then
-    cp -f "$DOTFILES_DIR/config/starship.toml" "$HOME/.config/starship.toml"
-    echo "  🎨 Deployed Starship config"
-fi
-
-# Deploy atuin config
-if [[ -f "$DOTFILES_DIR/config/atuin.toml" ]]; then
-    mkdir -p "$HOME/.config/atuin"
-    cp -f "$DOTFILES_DIR/config/atuin.toml" "$HOME/.config/atuin/config.toml"
-    echo "  📜 Deployed Atuin config (filter_mode = directory)"
-fi
-
-# Deploy zellij config & layouts
-if [[ -d "$DOTFILES_DIR/config/zellij" ]]; then
-    mkdir -p "$HOME/.config/zellij/layouts"
-    [[ -f "$DOTFILES_DIR/config/zellij/config.kdl" ]] && cp -f "$DOTFILES_DIR/config/zellij/config.kdl" "$HOME/.config/zellij/config.kdl"
-    [[ -d "$DOTFILES_DIR/config/zellij/layouts" ]] && cp -rf "$DOTFILES_DIR/config/zellij/layouts/." "$HOME/.config/zellij/layouts/"
-    echo "  🪟 Deployed Zellij config & layouts"
-fi
+# Copies a repo config to its place when it differs; $3 names it in the step line.
+_deploy() {
+    local src="$1" dest="$2" label="$3"
+    [[ -f "$src" ]] || return 0
+    mkdir -p "$(dirname "$dest")"
+    if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
+        return 0
+    fi
+    cp -f "$src" "$dest"
+    _wired+=("$label")
+}
+_deploy "$DOTFILES_DIR/config/starship.toml" "$HOME/.config/starship.toml" "Starship config"
+_deploy "$DOTFILES_DIR/config/atuin.toml" "$HOME/.config/atuin/config.toml" "Atuin config"
 
 # Configure copy-on-select (terminal only — not global PRIMARY↔CLIPBOARD sync)
+_cos_warn=0
 if [[ "$PLATFORM" == "macos" ]]; then
     _cos_ok=1
     defaults write com.googlecode.iterm2 CopySelection -bool true 2>/dev/null || _cos_ok=0
     defaults write com.apple.Terminal CopyOnSelect -bool true 2>/dev/null || _cos_ok=0
-    if [[ "$_cos_ok" -eq 1 ]]; then
-        echo "  📋 Configured macOS copy-on-select"
-    else
+    if [[ "$_cos_ok" -eq 0 ]]; then
         echo "  ⚠️ Could not set macOS copy-on-select (optional): set it in your terminal's preferences"
+        _cos_warn=1
     fi
 fi
 
 # Reset tool cache
 rm -f "$HOME/.cache/dotfiles_tools"
 
+if [[ "$_cos_warn" -eq 1 ]]; then
+    _step_end warn "wired, copy-on-select not set"
+elif [[ ${#_wired[@]} -gt 0 ]]; then
+    _step_end ok "updated: ${_wired[*]}"
+else
+    _step_end ok "up to date"
+fi
+
 # ============================================================================
 # STEP 7: Verify the install (fails loudly if a promised tool is missing)
 # ============================================================================
-echo -e "\n\033[1;34m🩺 STEP 7: Verifying installation...\033[0m"
+_step_begin 7 "Verification"
 
 DOCTOR="$DOTFILES_DIR/doctor.zsh"
 if [[ -f "$DOCTOR" ]] && command -v zsh &>/dev/null; then
-    if ! zsh "$DOCTOR"; then
-        echo -e "\033[1;31m❌ Verification failed — some promised tools are missing (see above).\033[0m"
-        echo -e "\033[1;33m   Fix the missing tools and re-run: bash install.sh --force\033[0m"
+    _doc_rc=0
+    _doc_env=()
+    [[ "$USE_COLOR" -eq 0 ]] && _doc_env=(NO_COLOR=1)
+    _doc_out=$(env ${_doc_env[@]+"${_doc_env[@]}"} zsh "$DOCTOR" --quiet 2>&1) || _doc_rc=$?
+    if [[ "$_doc_rc" -ne 0 ]]; then
+        printf '%s\n' "$_doc_out"
+        _step_end fail "doctor found missing items"
+        echo -e "${C_YEL}   Fix the missing tools and re-run: bash install.sh --force${C_RST}"
         exit 1
     fi
+    # Warnings stay visible; the doctor's own last line is the pass line.
+    printf '%s\n' "$_doc_out" | sed '$d'
+    _step_end ok "doctor: all required checks passed"
 else
-    echo -e "\033[1;33m  ⚠️  doctor.zsh not found — skipping verification.\033[0m"
+    echo -e "${C_YEL}  ⚠️  doctor.zsh not found — skipping verification.${C_RST}"
+    _step_end warn "skipped"
 fi
 
+if [[ -n "$RUN_LOG" ]]; then rm -f "$RUN_LOG"; fi
+
+echo ""
+_summary
 if [[ ${#FAILED_TOOLS[@]} -gt 0 ]]; then
-    echo -e "\n\033[1;31m❌ Not installed: ${FAILED_TOOLS[*]}\033[0m"
+    echo -e "\n${C_RED}❌ Not installed: ${FAILED_TOOLS[*]}${C_RST}"
     exit 1
 fi
 
 # ============================================================================
 # DONE — launch zsh
 # ============================================================================
-echo -e "\n\033[1;36m=================================================================\033[0m"
-echo -e "\033[1;32m  🎉 INSTALLATION COMPLETE!\033[0m"
-echo -e "\033[1;36m=================================================================\033[0m"
+echo ""
+echo -e "${C_CYN}┏━ ${C_GRN}🎉 Dotfiles ready${C_CYN} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}"
+echo -e "${C_CYN}┃${C_RST}  1. ${C_GRN}git-setup${C_RST}  configure your git identity"
+echo -e "${C_CYN}┃${C_RST}  2. ${C_GRN}ssh-setup${C_RST}  generate SSH keys"
+echo -e "${C_CYN}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RST}"
 echo ""
 if [[ "$NO_SHELL" -eq 1 ]]; then
     exit 0
 fi
-echo -e "  \033[1;33mNext steps:\033[0m"
-echo -e "    1. Run \033[1;32mgit-setup\033[0m to configure git identity"
-echo -e "    2. Run \033[1;32mssh-setup\033[0m to generate SSH keys"
-echo ""
-echo -e "\033[1;36m🐚 Launching zsh...\033[0m\n"
+echo -e "${C_CYN}🐚 Launching zsh...${C_RST}\n"
 exec zsh --login

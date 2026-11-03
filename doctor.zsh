@@ -7,7 +7,7 @@
 #
 # Usage:
 #   zsh doctor.zsh          # human report, exits non-zero if anything required is missing
-#   zsh doctor.zsh --quiet  # only print failures + summary
+#   zsh doctor.zsh --quiet  # only the ✗ and ! lines, then one pass/fail line (NO_COLOR drops colour)
 #
 # Exit codes:
 #   0  all required checks passed
@@ -29,13 +29,17 @@ QUIET=false
 # --- Colors ---
 C_RED=$'\033[1;31m'; C_GRN=$'\033[1;32m'; C_YEL=$'\033[1;33m'
 C_CYN=$'\033[1;36m'; C_DIM=$'\033[38;5;244m'; C_RST=$'\033[0m'
+[[ "$QUIET" == true && -n "${NO_COLOR:-}" ]] && C_RED="" C_GRN="" C_YEL="" C_CYN="" C_DIM="" C_RST=""
+
+# Headers and rules: hidden by --quiet.
+_say() { [[ "$QUIET" == true ]] || echo -e "$@"; }
 
 FAILS=0
 WARNS=0
 
 _ok()   { [[ "$QUIET" == true ]] || printf "  ${C_GRN}✓${C_RST} %-14s ${C_DIM}%s${C_RST}\n" "$1" "$2"; }
 _fail() { printf "  ${C_RED}✗${C_RST} %-14s ${C_RED}%s${C_RST}\n" "$1" "$2"; (( FAILS++ )); }
-_warn() { [[ "$QUIET" == true ]] || printf "  ${C_YEL}!${C_RST} %-14s ${C_YEL}%s${C_RST}\n" "$1" "$2"; (( WARNS++ )); }
+_warn() { printf "  ${C_YEL}!${C_RST} %-14s ${C_YEL}%s${C_RST}\n" "$1" "$2"; (( WARNS++ )); }
 
 # Require a command on PATH.
 require_cmd() {
@@ -84,13 +88,13 @@ require_flag() {
     fi
 }
 
-echo -e "\n${C_CYN}=================================================================${C_RST}"
-echo -e "${C_CYN}  🩺 DOTFILES DOCTOR${C_RST}   platform: ${C_YEL}${DOTFILES_PLATFORM:-unknown}${C_RST}"
-echo -e "${C_CYN}=================================================================${C_RST}"
+_say "\n${C_CYN}=================================================================${C_RST}"
+_say "${C_CYN}  🩺 DOTFILES DOCTOR${C_RST}   platform: ${C_YEL}${DOTFILES_PLATFORM:-unknown}${C_RST}"
+_say "${C_CYN}=================================================================${C_RST}"
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Core CLI tools${C_RST}"
-for t in git gh uv starship zoxide atuin zellij eza yq xh jq bun terraform terraform-ls rg fd just lazygit btm yazi; do
+_say "\n${C_CYN}▸ Core CLI tools${C_RST}"
+for t in git gh uv starship zoxide atuin eza jq bun terraform terraform-ls rg fd just lazygit btm yazi; do
     require_cmd "$t"
 done
 require_any "bat"   bat batcat
@@ -98,13 +102,13 @@ require_any "delta" delta git-delta
 require_cmd fzf
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Trash (safe rm)${C_RST}"
+_say "\n${C_CYN}▸ Trash (safe rm)${C_RST}"
 for t in trash-put trash-list trash-restore trash-empty; do
     require_cmd "$t"
 done
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Archive tools${C_RST}"
+_say "\n${C_CYN}▸ Archive tools${C_RST}"
 require_any "7z" 7z 7za 7zz
 for t in zip unzip tar xz zstd; do
     require_cmd "$t"
@@ -112,41 +116,33 @@ done
 require_any "rar-extract" unar unrar
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Clipboard (zellij copy)${C_RST}"
-case "$DOTFILES_PLATFORM" in
-    macos) require_cmd pbcopy ;;
-    wsl)   require_any "clipboard" clip.exe xclip ;;
-    *)     require_any "clipboard" xclip wl-copy xsel ;;
-esac
-
-# ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Feature flags (tool-cache)${C_RST}"
-for f in HAS_ZOXIDE HAS_EZA HAS_BAT HAS_GH HAS_JQ HAS_XH HAS_DELTA \
-         HAS_STARSHIP HAS_YQ HAS_UV HAS_BUN HAS_ATUIN HAS_FZF HAS_ZELLIJ HAS_TERRAFORM \
+_say "\n${C_CYN}▸ Feature flags (tool-cache)${C_RST}"
+for f in HAS_ZOXIDE HAS_EZA HAS_BAT HAS_GH HAS_DELTA \
+         HAS_STARSHIP HAS_UV HAS_BUN HAS_ATUIN HAS_FZF HAS_TERRAFORM \
          HAS_TRASH HAS_TRASH_PUT; do
     require_flag "$f"
 done
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}▸ Shell integration${C_RST}"
+_say "\n${C_CYN}▸ Shell integration${C_RST}"
 require_shell ll          "eza listing (ls stays plain in agent shells)"
 require_shell cat         "bat viewer"
 require_shell rl          "trash list"
 require_shell rt          "trash restore"
 require_shell empty-trash "empty trash"
-require_shell http        "xh client"
-require_shell zj          "zellij"
-require_shell pr          "gh pr create"
+require_shell ghv         "gh repo view"
 
 # ---------------------------------------------------------------------------
-echo -e "\n${C_CYN}=================================================================${C_RST}"
+_say "\n${C_CYN}=================================================================${C_RST}"
+# --quiet shows a warning count only when there is one.
+(( WARNS == 0 )) && [[ "$QUIET" == true ]] && WARNS=""
 if (( FAILS == 0 )); then
     echo -e "${C_GRN}  ✅ All required checks passed${C_RST}${WARNS:+  ${C_YEL}(${WARNS} warning(s))${C_RST}}"
-    echo -e "${C_CYN}=================================================================${C_RST}\n"
+    _say "${C_CYN}=================================================================${C_RST}\n"
     exit 0
 else
     echo -e "${C_RED}  ❌ ${FAILS} required check(s) FAILED${C_RST}${WARNS:+  ${C_YEL}(${WARNS} warning(s))${C_RST}}"
     echo -e "${C_DIM}  Fix: install the missing tool(s) or re-run install.sh, then reload with 'refresh'.${C_RST}"
-    echo -e "${C_CYN}=================================================================${C_RST}\n"
+    _say "${C_CYN}=================================================================${C_RST}\n"
     exit 1
 fi

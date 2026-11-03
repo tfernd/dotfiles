@@ -1,45 +1,139 @@
-# Smart archive extraction
+# Extract one archive (common formats) into an optional destination
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo -e "📝 \033[1;33mUsage:\033[0m extract <archive_file> [destination]"
+    echo "💡 One archive per call. Formats: tar (.gz .bz2 .xz .zst .lz4), zip/jar/war/whl/apk, 7z, rar, deb, rpm, and single-file .gz .bz2 .xz .zst .Z"
+    return 0
+fi
+
 if [[ -z "$1" ]]; then
     echo -e "📝 \033[1;33mUsage:\033[0m extract <archive_file> [destination]"
     return 1
 fi
 
-if [[ ! -f "$1" ]]; then
+# A leading dash would be read as an option by every tool below.
+local file="$1" dest="${2:-.}" kind strip stem member sz rc tool
+[[ "$file" == -* ]] && file="./$file"
+[[ "$dest" == -* ]] && dest="./$dest"
+
+if [[ -d "$file" ]]; then
+    echo "❌ '$1' is a directory, not an archive"
+    return 1
+fi
+if [[ ! -f "$file" ]]; then
     echo "❌ File '$1' not found!"
     return 1
 fi
 
-local dest="${2:-.}"
-if [[ "$dest" != "." ]] && [[ ! -d "$dest" ]]; then
-    mkdir -p "$dest"
+# Extension decides first, case-insensitively; the tools still get the original name.
+case "${(L)file}" in
+    *.tar.bz2|*.tbz2)          kind=tbz2 ;;
+    *.tar.gz|*.tgz)            kind=tgz ;;
+    *.tar.xz|*.txz)            kind=txz ;;
+    *.tar.zst|*.tar.lz4)       kind=tarauto ;;
+    *.tar)                     kind=tar ;;
+    *.zip|*.jar|*.war|*.whl|*.apk) kind=zip ;;
+    *.rar)                     kind=rar ;;
+    *.7z)                      kind=7z ;;
+    *.deb)                     kind=deb ;;
+    *.rpm)                     kind=rpm ;;
+    *.bz2)                     kind=bz2 ;;
+    *.gz)                      kind=gz ;;
+    *.z)                       kind=Z ;;
+    *.xz)                      kind=xz ;;
+    *.zst)                     kind=zst ;;
+esac
+
+# No known extension: ask file(1) (-b without --mime-type is the same on Linux and macOS).
+if [[ -z "$kind" ]] && (( $+commands[file] )); then
+    case "$(command file -b -- "$file" 2>/dev/null)" in
+        gzip*)       kind=gz ;;
+        bzip2*)      kind=bz2 ;;
+        XZ*)         kind=xz ;;
+        Zstandard*)  kind=zst ;;
+        Zip*)        kind=zip ;;
+        7-zip*)      kind=7z ;;
+        *POSIX\ tar*|*tar\ archive*) kind=tar ;;
+    esac
+    if [[ "$kind" == (gz|bz2|xz|zst) ]] && command tar -tf "$file" >/dev/null 2>&1; then
+        kind=tarauto
+    fi
 fi
 
-case "$1" in
-    *.tar.bz2|*.tbz2) tar xvjf "$1" -C "$dest"        ;;
-    *.tar.gz|*.tgz)   tar xvzf "$1" -C "$dest"        ;;
-    *.tar.xz|*.txz)   tar xvJf "$1" -C "$dest"        ;;
-    *.tar.zst)        tar --zstd -xvf "$1" -C "$dest" ;;
-    *.tar)            tar xvf "$1" -C "$dest"         ;;
-    *.zip)            unzip "$1" -d "$dest"           ;;
-    *.rar)
-        if command -v unar &>/dev/null; then
-            unar -o "$dest" "$1"
-        elif command -v unrar &>/dev/null; then
-            unrar x "$1" "$dest/"
+if [[ -z "$kind" ]]; then
+    echo "❌ Unknown archive format: '$1'"
+    return 1
+fi
+
+[[ "$dest" != "." && ! -d "$dest" ]] && mkdir -p -- "$dest"
+
+# 7zz (Homebrew sevenzip), 7z (p7zip) or 7za, whichever is installed.
+sz="${commands[7zz]:-${commands[7z]:-$commands[7za]}}"
+case "$kind" in
+    bz2) strip='.[bB][zZ]2' ;;
+    gz)  strip='.[gG][zZ]' ;;
+    Z)   strip='.[zZ]' ;;
+    xz)  strip='.[xX][zZ]' ;;
+    zst) strip='.[zZ][sS][tT]' ;;
+esac
+# A sniffed file without the extension gets ".out" so it cannot overwrite itself.
+stem="${file:t}"
+if [[ -n "$strip" ]]; then
+    stem="${stem%$strip}"
+    [[ "$stem" == "${file:t}" ]] && stem+=".out"
+fi
+
+setopt local_options pipefail
+case "$kind" in
+    tbz2)    command tar xvjf "$file" -C "$dest" ;;
+    tgz)     command tar xvzf "$file" -C "$dest" ;;
+    txz)     command tar xvJf "$file" -C "$dest" ;;
+    tarauto) command tar -xvf "$file" -C "$dest" ;;
+    tar)     command tar xvf "$file" -C "$dest" ;;
+    zip)     command unzip -- "$file" -d "$dest" ;;
+    rar)
+        if (( $+commands[unar] )); then
+            command unar -o "$dest" "$file"
+        elif (( $+commands[unrar] )); then
+            command unrar x "$file" "$dest/"
         else
             echo "❌ No RAR extractor found (install 'unar' or 'unrar')"; return 1
         fi
         ;;
-    *.7z)             7z x "$1" -o"$dest"             ;;
-    *.bz2)            bunzip2 -kc "$1" > "$dest/$(basename "${1%.bz2}")" ;;
-    *.gz)             gunzip -kc "$1" > "$dest/$(basename "${1%.gz}")"  ;;
-    *.Z)              gunzip -kc "$1" > "$dest/$(basename "${1%.Z}")"   ;;
-    *.xz)             unxz -kc "$1" > "$dest/$(basename "${1%.xz}")"    ;;
-    *.zst)            unzstd -o "$dest/$(basename "${1%.zst}")" "$1" ;;
-    *)                echo "❌ Unknown archive format: '$1'"; return 1 ;;
+    7z)
+        if [[ -z "$sz" ]]; then
+            echo "❌ No 7-Zip found (install '7zz', '7z' or '7za')"; return 1
+        fi
+        "$sz" x "$file" -o"$dest"
+        ;;
+    deb)
+        for tool in ar tar; do
+            (( $+commands[$tool] )) || { echo "❌ '$tool' is needed to unpack a .deb"; return 1; }
+        done
+        member="$(command ar t "$file" 2>/dev/null | command grep '^data\.tar')"
+        case "$member" in
+            data.tar.gz)  command ar p "$file" "$member" | command gzip -dc  | command tar -xvf - -C "$dest" ;;
+            data.tar.xz)  command ar p "$file" "$member" | command xz -dc    | command tar -xvf - -C "$dest" ;;
+            data.tar.bz2) command ar p "$file" "$member" | command bzip2 -dc | command tar -xvf - -C "$dest" ;;
+            data.tar.zst) command ar p "$file" "$member" | command zstd -dc  | command tar -xvf - -C "$dest" ;;
+            data.tar)     command ar p "$file" "$member" | command tar -xvf - -C "$dest" ;;
+            *)            echo "❌ No data.tar member in '$1'"; return 1 ;;
+        esac
+        ;;
+    rpm)
+        for tool in rpm2cpio cpio; do
+            (( $+commands[$tool] )) || { echo "❌ '$tool' is needed to unpack an .rpm"; return 1; }
+        done
+        command rpm2cpio "$file" | (cd -- "$dest" && command cpio -idm)
+        ;;
+    bz2)  command bunzip2 -kc "$file"  > "$dest/$stem" ;;
+    gz)   command gunzip -kc "$file"   > "$dest/$stem" ;;
+    Z)    command gunzip -kc "$file"   > "$dest/$stem" ;;
+    xz)   command unxz -kc "$file"     > "$dest/$stem" ;;
+    zst)  command unzstd -c "$file"    > "$dest/$stem" ;;
 esac
+rc=$?
 
-if [[ $? -eq 0 ]]; then
+if [[ $rc -eq 0 ]]; then
     [[ "$dest" != "." ]] && echo "📂 Extracted to $dest"
     return 0
 else
