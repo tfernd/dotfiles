@@ -51,6 +51,10 @@ if [[ "$HAS_STARSHIP" == "true" ]]; then
     if [[ -f "$DOTFILES_DIR/config/starship.toml" ]]; then
         mkdir -p "$HOME/.config"
         if [[ ! -r "$HOME/.config/starship.toml" ]] || ! cmp -s "$DOTFILES_DIR/config/starship.toml" "$HOME/.config/starship.toml"; then
+            if [[ -r "$HOME/.config/starship.toml" ]]; then
+                cp -f "$HOME/.config/starship.toml" "$HOME/.config/starship.toml.bak" 2>/dev/null &&
+                    print -r -- "⚠️  ~/.config/starship.toml differed from the repo copy: replaced it, old one kept as starship.toml.bak"
+            fi
             cp -f "$DOTFILES_DIR/config/starship.toml" "$HOME/.config/starship.toml" 2>/dev/null
         fi
     fi
