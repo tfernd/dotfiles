@@ -4,14 +4,14 @@
 # Debian, WSL (Debian-based), and macOS (quarantine window: .freshness).
 
 [tools]
-atuin = { version = "18.24.2", released = "2026-10-22" }
+atuin = { version = "18.24.3", released = "2026-10-29" }
 bat = { version = "0.26.1", released = "2025-12-02" }
 bun = { version = "1.4.4", released = "2026-10-22" }
 delta = { version = "0.20.1", released = "2026-10-04" }
 eza = { version = "0.23.5", released = "2026-07-09" }
 gh = { version = "2.103.3", released = "2026-10-26" }
 starship = { version = "1.27.0", released = "2026-10-17" }
-terraform = { version = "1.17.0", released = "2026-10-21" }
+terraform = { version = "1.17.1", released = "2026-10-28" }
 uv = { version = "0.13.6", released = "2026-10-27" }
 zoxide = { version = "0.10.0", released = "2026-07-04" }
 btm = { version = "0.14.9", released = "2026-08-27" }
@@ -20,7 +20,7 @@ fzf = { version = "0.74.5", released = "2026-10-11" }
 just = { version = "1.59.0", released = "2026-10-15" }
 lazygit = { version = "0.66.2", released = "2026-10-16" }
 rg = { version = "15.2.0", released = "2026-07-15" }
-terraform-ls = { version = "0.39.0", released = "2026-07-23" }
+terraform-ls = { version = "0.39.1", released = "2026-10-28" }
 yazi = { version = "26.9.1", released = "2026-09-01" }
 
 [fonts]
