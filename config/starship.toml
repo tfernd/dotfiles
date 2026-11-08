@@ -108,13 +108,13 @@ format = '([\[ $all_status$ahead_behind\] ]($style))'
 conflicted = "[!${count}](bold #d63031) "
 ahead = "[▲${count}](bold #38b000) "
 behind = "[▼${count}](bold #d63031) "
-diverged = "[⇄ ▲${ahead_count} ▼${behind_count}](bold #d63031) "
+diverged = "[▲${ahead_count} ▼${behind_count}](bold #d63031) "
 stashed = "[▪${count}](bold #6c757d) "
 staged = "[●${count}](bold #38b000) "
 modified = "[○${count}](bold #ffbe0b) "
 deleted = "[✕${count}](bold #d63031) "
 untracked = "[?${count}](bold #3a86ff) "
-renamed = "[→${count}](bold #8338ec) "
+renamed = "[»${count}](bold #8338ec) "
 typechanged = "[◈${count}](bold #ffbe0b) "
 
 [git_metrics]

@@ -167,7 +167,7 @@ snap "DELETED (unstaged)" "✕"
 git_silent checkout -- branch.txt >/dev/null
 
 git_silent mv branch.txt renamed.txt
-snap "RENAMED (staged)" "→"
+snap "RENAMED (staged)" "»"
 git_silent reset --hard HEAD >/dev/null
 
 echo "stash-me" >> base.txt
@@ -191,7 +191,7 @@ git_silent reset --hard HEAD~1 >/dev/null
 echo "diverged-local" >> base.txt
 git add base.txt
 git_silent commit -m "diverged local" >/dev/null
-snap "DIVERGED" "⇄"
+snap "DIVERGED" "▲1 ▼1"
 git_silent reset --hard origin/main >/dev/null
 
 echo "regular" > typechange.txt

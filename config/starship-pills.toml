@@ -103,9 +103,9 @@ deleted = "[-$count ](bold fg:#ff6b6b bg:#3b4261)"
 renamed = "[»$count ](bold fg:#c77dff bg:#3b4261)"
 typechanged = ""
 stashed = "[*$count ](bold fg:#adb5bd bg:#3b4261)"
-ahead = "[⇡$count ](bold fg:#5ce1a0 bg:#3b4261)"
-behind = "[⇣$count ](bold fg:#ff6b6b bg:#3b4261)"
-diverged = "[⇡$ahead_count⇣$behind_count ](bold fg:#ffd166 bg:#3b4261)"
+ahead = "[▲$count ](bold fg:#5ce1a0 bg:#3b4261)"
+behind = "[▼$count ](bold fg:#ff6b6b bg:#3b4261)"
+diverged = "[▲$ahead_count▼$behind_count ](bold fg:#ffd166 bg:#3b4261)"
 
 [git_metrics]
 disabled = true

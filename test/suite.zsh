@@ -1626,6 +1626,13 @@ assert_eq "install.sh font pin: version and date come from [fonts] only" \
     "$(DOTFILES_DIR="$dd_ib" bash -c "source '$dd_ib/font.sh'; echo \"\$FONT_VER \$FONT_RELEASED\"" 2>&1)" "3.5.1 2026-08-21"
 command rm -rf "$dd_ib"
 
+# --- Starship: no U+2190-21FF arrows (a ⇡ in git_status blanked the whole prompt line in Ghostty) ---
+for sp_cfg in "$DOT_DIR"/config/starship*.toml; do
+    sp_n=$(LC_ALL=en_US.UTF-8; setopt multibyte; sp_t=$(<"$sp_cfg"); print ${#${(M)${(s::)sp_t}:#[$'←'-$'⇿']}})
+    assert_eq "starship: ${sp_cfg:t} has no U+2190-21FF arrow glyphs (old code: pills 4, default 2)" "$sp_n" "0"
+done
+unset sp_cfg sp_n
+
 # --- Final check: this run printed no "command not found" ----------------------
 # Stop the capture first: tee has then read the whole run, and the log is complete.
 exec 1>&3 2>&4 3>&- 4>&-
