@@ -147,23 +147,23 @@ setup_repo
 # -----------------------------------------------------------------------------
 # git_status
 # -----------------------------------------------------------------------------
-snap "CLEAN" " main"
+snap "CLEAN" "main"
 
 echo "untracked" > untracked.txt
 snap "UNTRACKED" "?"
 rm -f untracked.txt
 
 echo "dirty" >> base.txt
-snap "MODIFIED" "○"
+snap "MODIFIED" "~1"
 git_silent checkout -- base.txt >/dev/null
 
 echo "staged" >> base.txt
 git add base.txt
-snap "STAGED" "●"
+snap "STAGED" "+1"
 git_silent reset --hard HEAD >/dev/null
 
 rm -f branch.txt
-snap "DELETED (unstaged)" "✕"
+snap "DELETED (unstaged)" "-1"
 git_silent checkout -- branch.txt >/dev/null
 
 git_silent mv branch.txt renamed.txt
@@ -172,7 +172,7 @@ git_silent reset --hard HEAD >/dev/null
 
 echo "stash-me" >> base.txt
 git_silent stash push -u -m "verify-stash" >/dev/null
-snap "STASHED" "▪"
+snap "STASHED" "*1"
 git_silent stash drop >/dev/null
 git_silent checkout -- base.txt >/dev/null 2>&1 || true
 
@@ -191,7 +191,7 @@ git_silent reset --hard HEAD~1 >/dev/null
 echo "diverged-local" >> base.txt
 git add base.txt
 git_silent commit -m "diverged local" >/dev/null
-snap "DIVERGED" "▲1 ▼1"
+snap "DIVERGED" "▲1▼1"
 git_silent reset --hard origin/main >/dev/null
 
 echo "regular" > typechange.txt
@@ -202,7 +202,7 @@ ln -sf base.txt typechange.txt
 git add typechange.txt
 # Starship 1.26 maps git 'T' to staged/modified (●/○), not typechanged (◈).
 # Still print it so we can see what the prompt actually does.
-snap "TYPECHANGED (git T; Starship may show ● not ◈)" ""
+snap "TYPECHANGED (git T; Starship shows +1)" ""
 git_silent reset --hard origin/main >/dev/null
 git_silent push --force origin main >/dev/null 2>&1 || true
 
@@ -211,22 +211,22 @@ git_silent push --force origin main >/dev/null 2>&1 || true
 # -----------------------------------------------------------------------------
 git_silent checkout main >/dev/null
 git_silent merge feature >/dev/null 2>&1 || true
-snap "MERGING (conflict)" "MERGING"
+snap "MERGING (conflict)" "MERGE"
 git_silent merge --abort >/dev/null
 
 git_silent checkout feature >/dev/null
 git_silent rebase main >/dev/null 2>&1 || true
-snap "REBASING (conflict)" "REBASING"
+snap "REBASING (conflict)" "REBASE"
 git_silent rebase --abort >/dev/null
 
 git_silent checkout main >/dev/null
 git_silent cherry-pick feature >/dev/null 2>&1 || true
-snap "CHERRY-PICKING (conflict)" "PICKING"
+snap "CHERRY-PICKING (conflict)" "PICK"
 git_silent cherry-pick --abort >/dev/null
 
 git_silent checkout main >/dev/null
 git_silent revert HEAD --no-commit >/dev/null 2>&1 || true
-snap "REVERTING" "REVERTING"
+snap "REVERTING" "REVERT"
 git_silent revert --abort >/dev/null 2>&1 || true
 git_silent reset --hard HEAD >/dev/null
 
@@ -234,7 +234,7 @@ git_silent checkout main >/dev/null
 git_silent bisect start >/dev/null
 git_silent bisect bad HEAD >/dev/null
 git_silent bisect good "$(git rev-list --max-parents=0 HEAD)" >/dev/null 2>&1 || true
-snap "BISECTING" "BISECTING"
+snap "BISECTING" "BISECT"
 git_silent bisect reset >/dev/null
 
 # mailbox apply (git am)
@@ -242,14 +242,14 @@ git_silent checkout feature >/dev/null
 git_silent format-patch -1 --stdout > "$PATCH_FILE"
 git_silent checkout main >/dev/null
 git_silent am "$PATCH_FILE" >/dev/null 2>&1 || true
-snap "APPLYING MAILBOX (git am)" "APPLYING"
+snap "APPLYING MAILBOX (git am)" "AM"
 git_silent am --abort >/dev/null 2>&1 || true
 
 # -----------------------------------------------------------------------------
 # git_commit (detached / tag)
 # -----------------------------------------------------------------------------
 git_silent checkout --detach main >/dev/null
-snap "DETACHED HEAD (untagged)" "DETACHED" "v1.2.0"
+snap "DETACHED HEAD (untagged)" "󰜘" "v1.2.0"
 git_silent checkout main >/dev/null
 
 git_silent checkout --detach v1.2.0 >/dev/null
@@ -257,7 +257,7 @@ snap "DETACHED + TAG v1.2.0" "v1.2.0"
 git_silent checkout main >/dev/null
 
 git_silent checkout -B tagged v1.2.0 >/dev/null
-snap "ATTACHED + TAG (no DETACHED)" "v1.2.0" "DETACHED"
+snap "ATTACHED + TAG (no DETACHED)" "v1.2.0" "󰜘"
 git_silent checkout main >/dev/null
 git_silent branch -D tagged >/dev/null 2>&1 || true
 
