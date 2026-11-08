@@ -19,6 +19,11 @@ local apply=false
 case "${1:-}" in
     "")      ;;
     --apply) apply=true ;;
+    -h|--help)
+        echo "📝 Usage: dotdoctor update [--apply]"
+        echo "  (no flag)   inventory of what can be updated or removed; nothing runs"
+        echo "  --apply     ask y/n/a/q before each step (needs a terminal)"
+        return 0 ;;
     *)       echo "❌ Unknown option: $1"
              echo "Usage: dotdoctor update [--apply]"
              _dd_hint_subcommand "$1"

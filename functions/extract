@@ -11,7 +11,8 @@ if [[ -z "$1" ]]; then
 fi
 
 # A leading dash would be read as an option by every tool below.
-local file="$1" dest="${2:-.}" kind strip stem member sz rc tool
+local file="$1" dest="${2:-.}" kind strip stem member sz rc tool m target tmp out
+local -a members cpioflags
 [[ "$file" == -* ]] && file="./$file"
 [[ "$dest" == -* ]] && dest="./$dest"
 
@@ -78,23 +79,35 @@ esac
 # A sniffed file without the extension gets ".out" so it cannot overwrite itself.
 stem="${file:t}"
 if [[ -n "$strip" ]]; then
-    stem="${stem%$strip}"
+    stem="${stem%${~strip}}"
     [[ "$stem" == "${file:t}" ]] && stem+=".out"
 fi
 
+out="" tmp=""
+case "$kind" in
+    bz2|gz|Z|xz|zst)
+        out="$dest/$stem"
+        if [[ -e "$out" || -L "$out" ]]; then
+            echo "❌ $out exists (move it first)"
+            return 1
+        fi
+        tmp="$dest/.extract.$$.$stem"
+        ;;
+esac
+
 setopt local_options pipefail
 case "$kind" in
-    tbz2)    command tar xvjf "$file" -C "$dest" ;;
-    tgz)     command tar xvzf "$file" -C "$dest" ;;
-    txz)     command tar xvJf "$file" -C "$dest" ;;
-    tarauto) command tar -xvf "$file" -C "$dest" ;;
-    tar)     command tar xvf "$file" -C "$dest" ;;
-    zip)     command unzip -- "$file" -d "$dest" ;;
+    tbz2)    command tar xvjf "$file" -k -C "$dest" ;;
+    tgz)     command tar xvzf "$file" -k -C "$dest" ;;
+    txz)     command tar xvJf "$file" -k -C "$dest" ;;
+    tarauto) command tar -xvf "$file" -k -C "$dest" ;;
+    tar)     command tar xvf "$file" -k -C "$dest" ;;
+    zip)     command unzip -n -- "$file" -d "$dest" ;;
     rar)
         if (( $+commands[unar] )); then
             command unar -o "$dest" "$file"
         elif (( $+commands[unrar] )); then
-            command unrar x "$file" "$dest/"
+            command unrar x -o- "$file" "$dest/"
         else
             echo "❌ No RAR extractor found (install 'unar' or 'unrar')"; return 1
         fi
@@ -103,7 +116,7 @@ case "$kind" in
         if [[ -z "$sz" ]]; then
             echo "❌ No 7-Zip found (install '7zz', '7z' or '7za')"; return 1
         fi
-        "$sz" x "$file" -o"$dest"
+        "$sz" x -aos "$file" -o"$dest"
         ;;
     deb)
         for tool in ar tar; do
@@ -111,11 +124,11 @@ case "$kind" in
         done
         member="$(command ar t "$file" 2>/dev/null | command grep '^data\.tar')"
         case "$member" in
-            data.tar.gz)  command ar p "$file" "$member" | command gzip -dc  | command tar -xvf - -C "$dest" ;;
-            data.tar.xz)  command ar p "$file" "$member" | command xz -dc    | command tar -xvf - -C "$dest" ;;
-            data.tar.bz2) command ar p "$file" "$member" | command bzip2 -dc | command tar -xvf - -C "$dest" ;;
-            data.tar.zst) command ar p "$file" "$member" | command zstd -dc  | command tar -xvf - -C "$dest" ;;
-            data.tar)     command ar p "$file" "$member" | command tar -xvf - -C "$dest" ;;
+            data.tar.gz)  command ar p "$file" "$member" | command gzip -dc  | command tar -xvf - -k -C "$dest" ;;
+            data.tar.xz)  command ar p "$file" "$member" | command xz -dc    | command tar -xvf - -k -C "$dest" ;;
+            data.tar.bz2) command ar p "$file" "$member" | command bzip2 -dc | command tar -xvf - -k -C "$dest" ;;
+            data.tar.zst) command ar p "$file" "$member" | command zstd -dc  | command tar -xvf - -k -C "$dest" ;;
+            data.tar)     command ar p "$file" "$member" | command tar -xvf - -k -C "$dest" ;;
             *)            echo "❌ No data.tar member in '$1'"; return 1 ;;
         esac
         ;;
@@ -123,20 +136,43 @@ case "$kind" in
         for tool in rpm2cpio cpio; do
             (( $+commands[$tool] )) || { echo "❌ '$tool' is needed to unpack an .rpm"; return 1; }
         done
-        command rpm2cpio "$file" | (cd -- "$dest" && command cpio -idm)
+        members=("${(@f)$(command rpm2cpio "$file" 2>/dev/null | command cpio -t 2>/dev/null)}")
+        for m in "${members[@]}"; do
+            [[ -z "$m" ]] && continue
+            if [[ "$m" == /* || "$m" == .. || "$m" == ../* || "$m" == */../* || "$m" == */.. ]]; then
+                echo "❌ Refusing '$m': the .rpm lists a path outside the destination"
+                return 1
+            fi
+            target="$dest/${m#./}"
+            if [[ ( -e "$target" || -L "$target" ) && ! -d "$target" ]]; then
+                echo "❌ $target exists (move it first)"
+                return 1
+            fi
+        done
+        cpioflags=(-idm)
+        [[ "$(command cpio --help 2>&1)" == *--no-absolute-filenames* ]] && cpioflags+=(--no-absolute-filenames)
+        command rpm2cpio "$file" | (cd -- "$dest" && command cpio "${cpioflags[@]}")
         ;;
-    bz2)  command bunzip2 -kc "$file"  > "$dest/$stem" ;;
-    gz)   command gunzip -kc "$file"   > "$dest/$stem" ;;
-    Z)    command gunzip -kc "$file"   > "$dest/$stem" ;;
-    xz)   command unxz -kc "$file"     > "$dest/$stem" ;;
-    zst)  command unzstd -c "$file"    > "$dest/$stem" ;;
+    bz2)  command bunzip2 -kc "$file"  > "$tmp" ;;
+    gz)   command gunzip -kc "$file"   > "$tmp" ;;
+    Z)    command gunzip -kc "$file"   > "$tmp" ;;
+    xz)   command unxz -kc "$file"     > "$tmp" ;;
+    zst)  command unzstd -c "$file"    > "$tmp" ;;
 esac
 rc=$?
+if [[ -n "$tmp" ]]; then
+    if [[ $rc -eq 0 ]] && command mv -n -- "$tmp" "$out" && [[ ! -e "$tmp" ]]; then
+        :
+    else
+        rc=1
+        command rm -f -- "$tmp"
+    fi
+fi
 
 if [[ $rc -eq 0 ]]; then
     [[ "$dest" != "." ]] && echo "📂 Extracted to $dest"
     return 0
 else
-    echo "❌ Extraction failed!"
+    echo "❌ Extraction failed! Anything already extracted is in ${dest:A}"
     return 1
 fi

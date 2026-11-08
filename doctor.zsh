@@ -38,8 +38,8 @@ FAILS=0
 WARNS=0
 
 _ok()   { [[ "$QUIET" == true ]] || printf "  ${C_GRN}✓${C_RST} %-14s ${C_DIM}%s${C_RST}\n" "$1" "$2"; }
-_fail() { printf "  ${C_RED}✗${C_RST} %-14s ${C_RED}%s${C_RST}\n" "$1" "$2"; (( FAILS++ )); }
-_warn() { printf "  ${C_YEL}!${C_RST} %-14s ${C_YEL}%s${C_RST}\n" "$1" "$2"; (( WARNS++ )); }
+_fail() { printf "  ${C_RED}✗${C_RST} %-14s ${C_RED}%s${C_RST}\n" "$1" "$2"; (( FAILS += 1 )); }
+_warn() { printf "  ${C_YEL}!${C_RST} %-14s ${C_YEL}%s${C_RST}\n" "$1" "$2"; (( WARNS += 1 )); }
 
 # Require a command on PATH.
 require_cmd() {
@@ -69,9 +69,11 @@ optional_cmd() {
 
 # Require a shell integration to exist (alias, function, or command).
 require_shell() {
-    local name="$1" desc="$2"
+    local name="$1" desc="$2" want="${3:-}"
     local kind="${$(whence -w "$name" 2>/dev/null)##*: }"
-    if [[ -n "$kind" && "$kind" != "none" ]]; then
+    if [[ -n "$want" && "$kind" != "$want" ]]; then
+        _fail "$name" "is '${kind:-none}', expected $want${desc:+  ($desc)}"
+    elif [[ -n "$kind" && "$kind" != "none" ]]; then
         _ok "$name" "$kind${desc:+  ($desc)}"
     else
         _fail "$name" "NOT DEFINED${desc:+  ($desc)}"
@@ -126,7 +128,7 @@ done
 # ---------------------------------------------------------------------------
 _say "\n${C_CYN}▸ Shell integration${C_RST}"
 require_shell ll          "eza listing (ls stays plain in agent shells)"
-require_shell cat         "bat viewer"
+require_shell cat         "bat viewer" alias
 require_shell rl          "trash list"
 require_shell rt          "trash restore"
 require_shell empty-trash "empty trash"

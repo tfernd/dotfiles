@@ -54,8 +54,7 @@ declare -A REPOS=(
 )
 
 NOW_EPOCH=$(date +%s)
-CUTOFF_EPOCH=$((NOW_EPOCH - MIN_AGE_DAYS * 86400))
-CUTOFF_DATE=$(date -d "@$CUTOFF_EPOCH" "+%Y-%m-%d" 2>/dev/null || date -r "$CUTOFF_EPOCH" "+%Y-%m-%d" 2>/dev/null)
+CUTOFF_DATE=$(date -d "-${MIN_AGE_DAYS} days" "+%Y-%m-%d" 2>/dev/null || date -v-"${MIN_AGE_DAYS}"d "+%Y-%m-%d")
 
 echo -e "\n\033[1;36m=================================================================\033[0m"
 echo -e "\033[1;35m  🔄 CHECKING TOOL RELEASES (Quarantine: >= ${MIN_AGE_DAYS} days old)\033[0m"
@@ -73,9 +72,9 @@ UPDATES_COUNT=0
 _api() {
     local path="$1"
     if command -v gh &>/dev/null && gh auth status &>/dev/null; then
-        gh api "$path" 2>/dev/null || return 1
+        gh api "$path" 2>/dev/null || true
     else
-        curl -fsSL "https://api.github.com/${path}" 2>/dev/null || return 1
+        curl -sSL "https://api.github.com/${path}" 2>/dev/null || true
     fi
 }
 
@@ -96,8 +95,13 @@ for tool in $(printf '%s\n' "${!REPOS[@]}" | sort); do
     [[ -z "$curr_ver" && "$tool" == firacode-nerd ]] && continue
 
     # Fetch release JSON
-    json=$(_fetch_releases "$repo" || echo "[]")
-    if [[ "$json" == "[]" || -z "$json" ]]; then
+    json=$(_fetch_releases "$repo")
+    if [[ -z "$json" || "$(echo "$json" | jq -r 'type' 2>/dev/null || true)" != "array" ]]; then
+        fetch_msg=$(echo "$json" | jq -r '.message // empty' 2>/dev/null || true)
+        printf "%-15s %-12s \033[31m%-14s %-12s %-15s\033[0m\n" "$tool" "$curr_ver" "error" "-" "fetch failed${fetch_msg:+: $fetch_msg}"
+        continue
+    fi
+    if [[ "$json" == "[]" ]]; then
         printf "%-15s %-12s \033[31m%-14s %-12s %-15s\033[0m\n" "$tool" "$curr_ver" "error" "-" "fetch failed"
         continue
     fi
@@ -119,19 +123,20 @@ for tool in $(printf '%s\n' "${!REPOS[@]}" | sort); do
         while read -r tag rel_day; do
             t="${tag#v}"
             t="${t#bun-v}"
+            [[ "${t,,}" =~ -(canary|rc|beta|alpha|pre|dev|nightly) ]] && continue
             [[ "$t" =~ ^[0-9]+(\.[0-9]+)*$ ]] || numeric=false
             normalised+="$t $rel_day"$'\n'
         done <<< "$candidates"
         if [[ "$numeric" == true ]]; then
             match=$(printf '%s' "$normalised" | sort -V -k1,1 | tail -n 1)
-            # Never propose a version older than the pin
-            top=${match%% *}
-            if [[ "$curr_ver" =~ ^[0-9]+(\.[0-9]+)*$ && "$curr_ver" != "$top" ]] \
-                && [[ "$(printf '%s\n%s\n' "$curr_ver" "$top" | sort -V | tail -n 1)" == "$curr_ver" ]]; then
-                match="$curr_ver $curr_date"
-            fi
         else
-            match="${candidates%%$'\n'*}"
+            match="${normalised%%$'\n'*}"
+        fi
+        # Never propose a version that is not newer than the pin
+        top=${match%% *}
+        if [[ -n "$top" && -n "$curr_ver" && "$curr_ver" != "$top" ]] \
+            && [[ "$(printf '%s\n%s\n' "$curr_ver" "$top" | sort -V | tail -n 1)" == "$curr_ver" ]]; then
+            match="$curr_ver $curr_date"
         fi
     fi
 

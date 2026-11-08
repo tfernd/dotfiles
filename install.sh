@@ -38,6 +38,28 @@ DOTFILES_DIR="$REPO_DIR"
 FRESH_DAYS=$(tr -dc '0-9' 2>/dev/null < "$DOTFILES_DIR/.freshness" || true)
 [[ -n "$FRESH_DAYS" ]] || { echo "❌ $DOTFILES_DIR/.freshness is missing or holds no number of days"; exit 1; }
 
+# YYYY-MM-DD date FRESH_DAYS back (GNU, then BSD). A release is allowed when its date is <= this.
+_quarantine_cutoff() {
+    date -d "-${FRESH_DAYS} days" +%F 2>/dev/null || date -v-"${FRESH_DAYS}"d +%F
+}
+
+# 0 when the release may be installed. A missing date fails closed: no date, no way to know its age.
+_quarantined() {
+    local name="$1" pinned_ver="$2" released_date="$3"
+    if [[ -z "$released_date" ]]; then
+        echo "  ⚠️ $name v$pinned_ver: no release date in versions.toml — SKIPPING"
+        return 1
+    fi
+    local cutoff
+    cutoff=$(_quarantine_cutoff)
+    # Both sides are fixed-width YYYY-MM-DD, so string order is calendar order (no 86400 math).
+    if [[ "$released_date" > "$cutoff" ]]; then
+        echo "  ⏳ $name v$pinned_ver: in quarantine (released $released_date, cutoff $cutoff) — SKIPPING"
+        return 1
+    fi
+    return 0
+}
+
 # Flags. Parsed with a loop (not "$@") so an empty argument list is safe under set -u.
 FORCE=0
 NO_SHELL=0
@@ -365,7 +387,9 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
     # ============================================================================
     _step_begin 4 "FiraCode Nerd Font"
 
-    FONT_VER=$({ grep 'firacode-nerd' "$DOTFILES_DIR/versions.toml" || true; } | sed -E 's/.*version = "([^"]+)".*/\1/')
+    _font_row=$(awk '/^\[/{s = ($0 == "[fonts]")} s' "$DOTFILES_DIR/versions.toml" | { grep -E '^firacode-nerd[[:space:]]*=' || true; })
+    FONT_VER=$(sed -nE 's/.*version = "([^"]+)".*/\1/p' <<<"$_font_row")
+    FONT_RELEASED=$(sed -nE 's/.*released = "([^"]+)".*/\1/p' <<<"$_font_row")
     if [[ -z "$FONT_VER" ]]; then FONT_VER="3.3.0"; fi
 
     # FiraCode Nerd Font (Linux): download the zip into a temp dir, check it against the GitHub
@@ -382,7 +406,7 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
             release_json=$(gh api "$release_path") \
                 || { echo "    ❌ GitHub API lookup failed for FiraCode Nerd Font v${ver} (gh exit $?)"; return 1; }
         else
-            release_json=$(curl -fsSL "https://api.github.com/${release_path}") \
+            release_json=$(curl --proto '=https' --tlsv1.2 -fsSL "https://api.github.com/${release_path}") \
                 || { echo "    ❌ GitHub API lookup failed for FiraCode Nerd Font v${ver} (curl exit $?; rate limit? try: gh auth login)"; return 1; }
         fi
         digest=$(jq -r '.assets[] | select(.name == "FiraCode.zip") | .digest // empty' <<<"$release_json" 2>/dev/null) || digest=""
@@ -391,7 +415,7 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
             return 1
         fi
         expected="${digest#sha256:}"
-        curl -fsSL -o "$zip" "https://github.com/ryanoasis/nerd-fonts/releases/download/v${ver}/FiraCode.zip" \
+        curl --proto '=https' --tlsv1.2 -fsSL -o "$zip" "https://github.com/ryanoasis/nerd-fonts/releases/download/v${ver}/FiraCode.zip" \
             || { echo "    ❌ Download failed for FiraCode Nerd Font (curl exit $?)"; return 1; }
         actual=$(sha256sum "$zip" 2>/dev/null | awk '{print $1}') || actual=""
         if [[ -z "$actual" ]]; then
@@ -434,7 +458,7 @@ if [[ "$TOOLS_ONLY" -eq 0 ]]; then
             _step_end ok "already installed"
         else
             echo "  Downloading FiraCode Nerd Font v${FONT_VER}..."
-            if _install_font "$FONT_VER"; then
+            if _quarantined "FiraCode Nerd Font" "$FONT_VER" "$FONT_RELEASED" && _install_font "$FONT_VER"; then
                 N_INSTALLED=$(( N_INSTALLED + 1 ))
                 _step_end ok "v${FONT_VER} installed"
             else
@@ -504,7 +528,7 @@ fi
         repo=$(echo "$url" | sed -E 's|https://github.com/([^/]+/[^/]+)/releases/download/.*|\1|')
         tag=$(echo "$url" | sed -E 's|https://github.com/[^/]+/[^/]+/releases/download/([^/]+)/.*|\1|')
         asset="${url##*/}"
-        curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" \
+        curl --proto '=https' --tlsv1.2 -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" \
             | jq -r --arg n "$asset" '.assets[] | select(.name == $n) | .digest // empty'
     }
 
@@ -517,7 +541,7 @@ fi
         local spec="${1#gh:}" repo ver re tag json row
         IFS='|' read -r repo ver re <<<"$spec"
         for tag in "v${ver}" "${ver}"; do
-            json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null) || continue
+            json=$(curl --proto '=https' --tlsv1.2 -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null) || continue
             row=$(jq -r --arg re "$re" '[.assets[]? | select(.name | test($re; "i"))] | .[0] // empty | [.browser_download_url, (.digest // "")] | @tsv' <<<"$json" 2>/dev/null) || continue
             if [[ -n "$row" ]]; then
                 printf '%s\n' "$row"
@@ -531,6 +555,7 @@ fi
     # fails (text file busy), and cp onto a symlink writes through it into the file it points at.
     _place_bin() {
         local src="$1" name="$2" dest="$HOME/.local/bin/$2"
+        rm -f "$dest.new"
         cp -f "$src" "$dest.new" && chmod +x "$dest.new" && mv -f "$dest.new" "$dest" \
             || { rm -f "$dest.new"; echo "    ❌ Copy to ~/.local/bin failed for $name"; return 1; }
     }
@@ -549,12 +574,12 @@ fi
             url="${resolved%%$'\t'*}"
             pre_digest="${resolved#*$'\t'}"
         fi
-        curl -fsSL -o "$tmpfile" "$url" || { echo "    ❌ Download failed for $name (curl exit $?)"; return 1; }
+        curl --proto '=https' --tlsv1.2 -fsSL -o "$tmpfile" "$url" || { echo "    ❌ Download failed for $name (curl exit $?)"; return 1; }
 
         local expected=""
         if [[ -n "$checksum_url" ]]; then
             local sums
-            sums=$(curl -fsSL "$checksum_url") || { echo "    ❌ Checksum download failed for $name (curl exit $?)"; return 1; }
+            sums=$(curl --proto '=https' --tlsv1.2 -fsSL "$checksum_url") || { echo "    ❌ Checksum download failed for $name (curl exit $?)"; return 1; }
             expected=$(awk -v n="${url##*/}" 'index($0, n) {print $1; exit}' <<<"$sums")
             [[ -z "$expected" ]] && expected=$(awk '{print $1; exit}' <<<"$sums")
         else
@@ -589,8 +614,9 @@ fi
                 mkdir -p "$extract_dir" || { echo "    ❌ Cannot create extract dir for $name"; return 1; }
                 tar xzf "$tmpfile" -C "$extract_dir" || { echo "    ❌ Extract failed for $name (tar)"; return 1; }
                 local bin_src="$extract_dir/${binary_path}"
+                [[ ! -L "$bin_src" ]] || { echo "    ❌ ${binary_path} in the $name archive is a symlink, not a regular file"; return 1; }
                 [[ -f "$bin_src" ]] || bin_src=$(find "$extract_dir" -name "${binary_path##*/}" -type f 2>/dev/null | head -1) || true
-                [[ -n "$bin_src" && -f "$bin_src" ]] || { echo "    ❌ ${binary_path} not found in the $name archive"; return 1; }
+                [[ -n "$bin_src" && -f "$bin_src" && ! -L "$bin_src" ]] || { echo "    ❌ ${binary_path} not found in the $name archive"; return 1; }
                 _place_bin "$bin_src" "$name" || return 1
                 ;;
             zip)
@@ -703,26 +729,6 @@ fi
 
         # One tool failing must not stop the others: it is listed at the end and the run exits 1.
         _job_start "$kind" "$installed_ver" "$pinned_ver" "$name" "$@"
-    }
-
-    # YYYY-MM-DD date FRESH_DAYS back (GNU, then BSD). A release is allowed when its date is <= this.
-    _quarantine_cutoff() {
-        date -d "-${FRESH_DAYS} days" +%F 2>/dev/null || date -v-"${FRESH_DAYS}"d +%F
-    }
-
-    _quarantined() {
-        local name="$1" pinned_ver="$2" released_date="$3"
-        if [[ -z "$released_date" ]]; then
-            return 0
-        fi
-        local cutoff
-        cutoff=$(_quarantine_cutoff)
-        # Both sides are fixed-width YYYY-MM-DD, so string order is calendar order (no 86400 math).
-        if [[ "$released_date" > "$cutoff" ]]; then
-            echo "  ⏳ $name v$pinned_ver: in quarantine (released $released_date, cutoff $cutoff) — SKIPPING"
-            return 1
-        fi
-        return 0
     }
 
     # An old source build in ~/.local/bin comes first on PATH and would hide the system git.

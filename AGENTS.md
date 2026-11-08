@@ -65,8 +65,9 @@ test/               suite.zsh (mocks every tool), mock_tools.zsh, uninstall.sh (
 | `rm`, `del` | **trash** | **trash**, deliberately identical |
 
 - Never make agent-shell output depend on a TTY: `--color=auto`, never `--color=always` or bare `--icons`.
-- Never weaken `rm` → trash for agents. `rm` is a function in `modules/files/trash.zsh` when `trash-put` exists, alias
-  `trash` with only `trash`, a function that drops `-f` and calls `command rm -i` with neither: check the branch before saying which. The trash function refuses `/`, `$HOME`, `.` and `..`. It uses only builtins and
+- Never weaken `rm` → trash for agents. `rm`/`del` are one function in `modules/files/trash.zsh` on every machine: one
+  guard refuses `/`, `$HOME`, `.`, `..` and unknown options, then it calls `trash-put`, else `trash`; with neither, agent
+  shells refuse and human shells get `command rm -i` without `-f`. It uses only builtins and
   `command trash-put`/`command trash`, because an agent shell once had `rm` but not its helper. `command rm`, `/bin/rm`,
   scripts and `find -delete` bypass it; real enforcement is the agent's permission settings.
 - Gate human-UX features (prompts, key bindings, fuzzy pickers, anything reading `/dev/tty`) behind `[[ "$IS_AGENT" != "true" ]]`.
@@ -198,6 +199,9 @@ test), and this file (structure, load order, conventions). Docs write the clone 
   apply), `echo =====` fails (quote it), `print "-- x"` reads as an option (`print -r -- …`), `whence -v` shows no file
   for an autoloaded function (`print -l $^fpath/NAME(N)`). Test with `env -i HOME="$HOME" TERM=xterm-256color zsh -i -c '…'`
   (human) or `TERM=dumb` (agent). `zsh -i` on a scratch `.zshrc` runs every line: use `zsh -f` and set `fpath`.
+  An alias defined by a file sourced inside a `zsh -c '…'` string is not expanded later in that same string (the
+  string is parsed first): test aliases with `eval "rm x"` or from a script file. `env -i` drops prefix assignments
+  (`X=1 env -i …`): put them in the `env` words.
 - Tracked files never hold the owner's GitHub handle, account name, e-mail or machine paths. A clean tree is not a clean
   history: also run `git log --all -i -G <handle> --oneline` (`-S` misses moved lines) and
   `git log --all --format='%an <%ae>' | sort | uniq -c`.

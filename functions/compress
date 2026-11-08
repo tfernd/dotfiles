@@ -17,6 +17,7 @@ local -a inputs
 shift
 
 # Only the file name decides: a dot in a folder name (v1.0/x) is not an extension.
+while [[ "$archive" == ?*/ ]]; do archive="${archive%/}"; done
 [[ "${archive:t}" != *.* ]] && archive="${archive}.tar.gz"
 [[ "$archive" == -* ]] && archive="./$archive"
 for input in "$@"; do

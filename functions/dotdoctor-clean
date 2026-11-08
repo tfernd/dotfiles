@@ -22,6 +22,11 @@ local apply=false reply
 case "${1:-}" in
     "")      ;;
     --apply) apply=true ;;
+    -h|--help)
+        echo "📝 Usage: dotdoctor clean [--apply]"
+        echo "  (no flag)   report leftovers; nothing is changed"
+        echo "  --apply     ask y/N before removing each removable finding (needs a terminal)"
+        return 0 ;;
     *)       echo "❌ Unknown option: $1"
              echo "Usage: dotdoctor clean [--apply]"
              _dd_hint_subcommand "$1"
@@ -42,7 +47,7 @@ local -a todo_kind=() todo_arg=() todo_what=() todo_val=() todo_sev=() todo_n=()
 
 # --- 1. User systemd units whose program is gone -----------------------------
 _dd_head "User systemd units (~/.config/systemd/user)"
-local udir="$HOME/.config/systemd/user" unit name line prog state exists
+local udir="$HOME/.config/systemd/user" unit name line prog state exists pathnote
 local -a units=("$udir/"*.{service,timer}(N)) words=()
 if (( $#units == 0 )); then
     _dd_ok "no user units"
@@ -50,7 +55,7 @@ fi
 for unit in "${units[@]}"; do
     _dd_in_trash "$unit" && continue
     name="${unit:t}"
-    line=$(command grep -m1 -E '^ExecStart=.' "$unit" 2>/dev/null)
+    line=$(command grep -E '^ExecStart=.' "$unit" 2>/dev/null | command tail -n 1)
     if [[ -z "$line" ]]; then
         if [[ "$name" == *.timer ]]; then
             _dd_ok "$name  timer, no ExecStart=: its service is checked on its own"
@@ -69,18 +74,20 @@ for unit in "${units[@]}"; do
         continue
     fi
     exists=false
+    pathnote=""
     if [[ "$prog" == */* ]]; then
         [[ -e "$prog" ]] && exists=true
     else
+        pathnote=", looked up on this shell's PATH"
         (( $+commands[$prog] )) && exists=true
     fi
     state=""
     (( $+commands[systemctl] )) && state=$(systemctl --user is-enabled "$name" 2>/dev/null)
     state="${state:-unknown}"
     if [[ "$exists" == true ]]; then
-        _dd_ok "$name  runs $prog  ($state)"
+        _dd_ok "$name  runs $prog  ($state$pathnote)"
     else
-        _dd_warn "$name  dangling unit, program missing: $prog  ($state)"
+        _dd_warn "$name  dangling unit, program missing: $prog  ($state$pathnote)"
         todo_kind+=(unit); todo_arg+=("$unit"); todo_val+=(""); todo_what+=("unit $name (program missing)")
         todo_sev+=(warn); todo_n+=(1)
     fi
@@ -153,7 +160,7 @@ brotli_fixed=$(_dd_field python-brotli fixed)
 for dist in ${(f)"$(_dd_py_dists)"}; do
     [[ -n "$dist" ]] || continue
     found=true
-    ver="${${dist:t}#brotli-}"
+    ver="${${dist:t:l}#brotli-}"
     ver="${ver%.dist-info}"
     if [[ -z "$brotli_fixed" ]]; then
         _dd_warn "python brotli $ver  $dist  (no fixed version in versions.toml: not checked)"
@@ -205,7 +212,14 @@ for pt in ${(f)"$(_dd_pinned_tools)"}; do
             _dd_warn "$pt is also at ${pcopy/#$HOME/~} (not from apt or Homebrew: remove it yourself if you do not use it)"
             continue
         fi
-        pver=$("$pcopy" --version 2>/dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command sed -n 1p)
+        pver=""
+        if _dd_runnable "$pcopy"; then
+            if whence -p timeout >/dev/null 2>&1; then
+                pver=$(command timeout 5 "$pcopy" --version 2>/dev/null </dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command sed -n 1p)
+            else
+                pver=$("$pcopy" --version 2>/dev/null </dev/null | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | command sed -n 1p)
+            fi
+        fi
         _dd_warn "$pt is also installed by ${powner%%:*} ($pcopy${pver:+ $pver}): the pinned copy in ~/.local/bin runs first, so this one is unused, and ${powner%%:*} can upgrade it past the pin"
         pok=true
         if [[ "$powner" == apt:* ]]; then
@@ -258,14 +272,18 @@ if [[ "$apply" == true ]] && (( $#todo_kind > 0 )); then
     fi
     _dd_head "Removals (asks first; originals go to a backup folder)"
     local i ch k n_left link value_esc stamp backup_dir="" git_saved=false units_moved=false
+    local question lbase ldest lsrc
+    local -i lnum
     local -a rmcmd=()
     local state_dir="${DOTDOCTOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/dotdoctor}"
     stamp=$(date +%Y%m%d_%H%M%S)
     for (( i = 1; i <= $#todo_kind; i++ )); do
-        reply=n
-        read -q "reply?Remove ${todo_what[i]}? [y/N] "
-        echo
-        if [[ "$reply" != y ]]; then
+        reply=""
+        question="Remove ${todo_what[i]}?"
+        [[ "${todo_arg[i]}" == apt:* ]] && question="Remove ${todo_what[i]}? This runs: sudo apt-get remove -y ${todo_arg[i]#apt:}."
+        print -rn -- "$question [y/N] "
+        read -r reply || [[ -n "$reply" ]] || echo
+        if [[ "${reply:l}" != (y|yes) ]]; then
             printf "  ${DD_DIM}-${DD_RST} kept: %s\n" "${todo_what[i]}"
             continue
         fi
@@ -307,8 +325,16 @@ if [[ "$apply" == true ]] && (( $#todo_kind > 0 )); then
                 _dd_fail "could not remove ${todo_what[i]}; kept it"
             fi
         elif [[ "${todo_kind[i]}" == leftover ]]; then
-            if command mv -- "${todo_arg[i]}" "$backup_dir/${todo_arg[i]:t}"; then
-                _dd_ok "moved ${todo_arg[i]:t} to $backup_dir"
+            lsrc="${todo_arg[i]}"
+            lbase="${${${lsrc:h}#/}//\//_}__${lsrc:t}"
+            ldest="$backup_dir/$lbase"
+            lnum=1
+            while [[ -e "$ldest" || -L "$ldest" ]]; do
+                ldest="$backup_dir/$lbase.$lnum"
+                (( lnum += 1 ))
+            done
+            if command mv -n -- "$lsrc" "$ldest" && [[ ! -e "$lsrc" && ! -L "$lsrc" && ( -e "$ldest" || -L "$ldest" ) ]]; then
+                _dd_ok "moved ${lsrc:t} to ${ldest}"
                 if [[ "${todo_sev[i]}" == fail ]]; then (( DD_FAILS -= todo_n[i] )); else (( DD_WARNS -= todo_n[i] )); fi
             else
                 _dd_fail "could not move ${todo_arg[i]:t}; kept it"

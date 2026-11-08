@@ -65,6 +65,9 @@ echo -e "\n\033[1;33m🔍 SEARCH & SYSTEM\033[0m"
 print_cmd "c" "Clear terminal"
 print_cmd "myip, localip" "Public and local IP"
 print_cmd "reload, x" "Reload shell, Exit"
+print_cmd "path" "Print each PATH entry on its own line"
+print_cmd "ssh-login" "Start ssh-agent and load ~/.ssh/id_ed25519"
+print_cmd "ssh-test" "Test the SSH connection to GitHub"
 
 echo -e "\n\033[1;33m🐙 GIT & GITHUB\033[0m"
 if [[ "$HAS_GH" == "true" ]]; then
@@ -87,7 +90,7 @@ print_cmd "dotdoctor scan --deep" "Local scan plus package file verification (sl
 print_cmd "dotdoctor clean" "Dangling units, git rewrites, old Brotli, duplicate tool copies"
 print_cmd "sudok" "Forget cached sudo credentials"
 [[ "$HAS_TRASH" == "true" ]] && print_cmd "rm, del" "Move to Trash (safe)"
-[[ "$HAS_TRASH" == "true" ]] && print_cmd "rl, rt" "List trash, Restore from trash"
-[[ "$HAS_TRASH" == "true" ]] && print_cmd "empty-trash" "Empty trash (with preview)"
+[[ "$HAS_TRASH_PUT" == "true" ]] && print_cmd "rl, rt" "List trash, Restore from trash"
+[[ "$HAS_TRASH_PUT" == "true" ]] && print_cmd "empty-trash" "Empty trash (with preview)"
 
 echo -e "\n\033[1;36m=================================================================\033[0m\n"

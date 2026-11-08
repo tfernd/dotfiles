@@ -37,9 +37,20 @@ typeset -ga DD_PIN_MSGS=()
 # the XDG Trash and the macOS ~/.Trash (_dd_in_trash does the same for globs).
 typeset -ga DD_TRASH_PRUNE=(\( -path "$HOME/.local/share/Trash" -o -path "$HOME/.Trash" \) -prune -o)
 
-_dd_ok()   { [[ "$DD_QUIET" == true ]] || printf "  ${DD_GRN}✓${DD_RST} %s\n" "$*"; }
-_dd_warn() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_YEL}!${DD_RST} %s\n" "$*"; (( DD_WARNS += 1 )); }
-_dd_fail() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_RED}✗${DD_RST} %s\n" "$*"; (( DD_FAILS += 1 )); }
+# _dd_clean <text>: untrusted text (OSV summaries, rc-file lines, process and unit names)
+# without C0 control bytes (tab kept) and DEL, so it cannot drive the terminal.
+_dd_clean() { print -rn -- "${*//[$'\001'-$'\010\013'-$'\037\177']/}"; }
+
+# _dd_list <line>...: indented detail lines under a message, cleaned.
+_dd_list() {
+    local line
+    [[ "$DD_QUIET" == true ]] && return 0
+    for line in "$@"; do printf "      %s\n" "$(_dd_clean "$line")"; done
+}
+
+_dd_ok()   { [[ "$DD_QUIET" == true ]] || printf "  ${DD_GRN}✓${DD_RST} %s\n" "$(_dd_clean "$*")"; }
+_dd_warn() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_YEL}!${DD_RST} %s\n" "$(_dd_clean "$*")"; (( DD_WARNS += 1 )); }
+_dd_fail() { [[ "$DD_QUIET" == true ]] || printf "  ${DD_RED}✗${DD_RST} %s\n" "$(_dd_clean "$*")"; (( DD_FAILS += 1 )); }
 _dd_head() { [[ "$DD_QUIET" == true ]] || printf "\n${DD_CYN}▸ %s${DD_RST}\n" "$*"; }
 
 # _dd_fact <category> <key> <value>: one stable line for the facts list.
@@ -52,6 +63,8 @@ _dd_fact() {
     # A tab or line break would split the TSV fact into more than three fields.
     key=${key//[$'\t\n\r']/ }
     value=${value//[$'\t\n\r']/ }
+    key=${key//[$'\001'-$'\010\013'-$'\037\177']/}
+    value=${value//[$'\001'-$'\010\013'-$'\037\177']/}
     DD_FACTS+=("$1"$'\t'"$key"$'\t'"$value")
 }
 
@@ -78,7 +91,7 @@ _dd_py_dists() {
     (( $#roots )) || return 0
     command find "${roots[@]}" -maxdepth 10 "${DD_TRASH_PRUNE[@]}" \
         \( -name .cache -o -name node_modules -o -name .git -o -name Trash -o -name .Trash \) -prune -o \
-        -type d -name 'brotli-*.dist-info' -path '*site-packages*' -print 2>/dev/null | command sort -u
+        -type d -iname 'brotli-*.dist-info' -path '*site-packages*' -print 2>/dev/null | command sort -u
 }
 
 # Dates: GNU date first, then BSD/macOS date.
@@ -135,9 +148,17 @@ _dd_advisory() {
     fi
     fx=(${=fixed})
     rd=(${=released})
+    ar=(${=affected})
+    low="${ar[1]}"
+    high="${ar[2]}"
     line=$(_dd_line "$installed")
     for (( i = 1; i <= $#fx; i++ )); do
         [[ "$(_dd_line "${fx[i]}")" == "$line" ]] || continue
+        if [[ -n "$low" && -n "$high" && "$installed" != "$low" ]] \
+            && [[ "$(print -l "$low" "$installed" | sort -V | head -1)" != "$low" ]]; then
+            _dd_ok "$label $installed  below the affected range of $cve ($low to $high)"
+            return 0
+        fi
         if [[ "$(print -l "${fx[i]}" "$installed" | sort -V | tail -1)" == "$installed" ]]; then
             _dd_ok "$label $installed  fixed ($cve, fixed in ${fx[i]})"
         else
@@ -153,9 +174,6 @@ _dd_advisory() {
         fi
         return 0
     done
-    ar=(${=affected})
-    low="${ar[1]}"
-    high="${ar[2]}"
     if [[ -n "$low" && -n "$high" ]] \
         && [[ "$(print -l "$low" "$installed" | sort -V | head -1)" == "$low" ]] \
         && [[ "$(print -l "$installed" "$high" | sort -V | head -1)" == "$installed" ]]; then
@@ -259,7 +277,14 @@ _dd_pin_advisories() {
             if [[ "$(_dd_line "${fx[k]}")" == "$line" ]]; then i=$k; break; fi
         done
         if (( i > 0 )); then
-            # At or above the fix on its own release line: not affected.
+            ar=(${=affected})
+            low="${ar[1]}"
+            high="${ar[2]}"
+            # Below the affected range, or at or above the fix on its own release line: not affected.
+            if [[ -n "$low" && -n "$high" && "$pinned" != "$low" ]] \
+                && [[ "$(print -l "$low" "$pinned" | command sort -V | command head -1)" != "$low" ]]; then
+                continue
+            fi
             [[ "$(print -l "${fx[i]}" "$pinned" | command sort -V | command tail -1)" == "$pinned" ]] && continue
         else
             ar=(${=affected})

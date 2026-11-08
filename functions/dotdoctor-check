@@ -17,6 +17,15 @@ dotdoctor-lib
 
 local arg
 for arg in "$@"; do
+    if [[ "$arg" == -h || "$arg" == --help ]]; then
+        echo "📝 Usage: dotdoctor check [--latest] [--advisories]"
+        echo "  (no flag)      pinned versions and known advisories (no network)"
+        echo "  --latest       also ask GitHub for releases past the quarantine"
+        echo "  --advisories   ask OSV.dev about the [osv] tools (network)"
+        return 0
+    fi
+done
+for arg in "$@"; do
     if [[ "$arg" != --latest && "$arg" != --advisories ]]; then
         echo "❌ unknown option: $arg (usage: dotdoctor check [--latest] [--advisories])"
         _dd_hint_subcommand "$arg"

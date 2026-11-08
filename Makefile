@@ -5,7 +5,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-BASH_SCRIPTS := install.sh update-versions.sh verify-status.sh test/uninstall.sh
+SHEBANG_FILES := $(shell git ls-files --cached --others --exclude-standard 2>/dev/null | while read -r f; do [ -f "$$f" ] && head -n 1 "$$f" | grep -q '^\#!.*bash' && echo "$$f"; done)
+BASH_SCRIPTS := $(sort $(SHEBANG_FILES) $(wildcard *.sh test/*.sh))
 ZSH_SCRIPTS  := doctor.zsh test/suite.zsh test/mock_tools.zsh \
                 $(wildcard core/*.zsh plugins/*.zsh platform/*.zsh) \
                 $(shell find modules -name '*.zsh' | sort) \
@@ -56,8 +57,9 @@ versions-apply: ## Write newer pins to versions.toml (network)
 	bash ./update-versions.sh --apply
 
 refresh: ## Drop the cached tool detection and init output (same as the `refresh` alias, without exec zsh)
-	rm -f "$$HOME/.cache/dotfiles_tools" "$$HOME/.cache/starship_init.zsh" "$$HOME/.cache/atuin_init.zsh" \
-	      "$$HOME/.cache/zoxide_init.zsh" "$$HOME/.cache/gh_completion.zsh"
+	@cmd=$$(sed -nE "s/^alias refresh='(rm -f [^&]*)&&.*/\1/p" core/tool-cache.zsh); \
+	test -n "$$cmd" || { echo "❌ no refresh alias in core/tool-cache.zsh"; exit 1; }; \
+	eval "$$cmd"
 
 clean: ## Remove generated test artifacts
 	rm -rf .verify-status-worktree /tmp/dotfiles_test_home /tmp/dotfiles_mock_bin

@@ -18,6 +18,9 @@ TEST_DIR="$SCRIPT_DIR/.verify-status-worktree"
 STARSHIP_TOML="$SCRIPT_DIR/config/starship.toml"
 PASS=0
 FAIL=0
+ORIGIN_DIR="$(mktemp -d /tmp/verify-status-origin.XXXXXX)"
+PATCH_FILE="$(mktemp /tmp/verify-status-patch.XXXXXX)"
+trap 'rm -rf -- "${ORIGIN_DIR:?}" "${PATCH_FILE:?}"' EXIT
 
 if ! command -v starship >/dev/null 2>&1; then
     echo "❌ starship not on PATH"
@@ -63,10 +66,8 @@ setup_repo() {
     git_silent commit -m "main commit" >/dev/null
 
     # Keep origin outside the generated worktree so Starship does not count a bare repo as ?N
-    local origin_dir
-    origin_dir="$(mktemp -d /tmp/verify-status-origin.XXXXXX)"
-    git_silent clone --bare "$TEST_DIR" "$origin_dir" >/dev/null 2>&1
-    git_silent remote add origin "$origin_dir"
+    git_silent clone --bare "$TEST_DIR" "$ORIGIN_DIR" >/dev/null 2>&1
+    git_silent remote add origin "$ORIGIN_DIR"
     git_silent push -u origin main >/dev/null 2>&1
     git_silent push origin feature >/dev/null 2>&1
 }
@@ -238,12 +239,11 @@ git_silent bisect reset >/dev/null
 
 # mailbox apply (git am)
 git_silent checkout feature >/dev/null
-git_silent format-patch -1 --stdout > /tmp/verify-status.patch
+git_silent format-patch -1 --stdout > "$PATCH_FILE"
 git_silent checkout main >/dev/null
-git_silent am /tmp/verify-status.patch >/dev/null 2>&1 || true
+git_silent am "$PATCH_FILE" >/dev/null 2>&1 || true
 snap "APPLYING MAILBOX (git am)" "APPLYING"
 git_silent am --abort >/dev/null 2>&1 || true
-rm -f /tmp/verify-status.patch
 
 # -----------------------------------------------------------------------------
 # git_commit (detached / tag)

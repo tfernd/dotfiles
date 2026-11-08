@@ -29,6 +29,10 @@ for arg in "$@"; do
         --facts) mode=facts ;;
         --save)  mode=save ;;
         --diff)  mode=diff ;;
+        -h|--help)
+            print -r -- "📝 Usage: dotdoctor scan [--deep] [--facts | --save | --diff]"
+            return 0
+            ;;
         *) echo "❌ unknown scan option: $arg"; _dd_hint_subcommand "$arg"; return 1 ;;
     esac
 done
@@ -48,7 +52,8 @@ fi
 # --- Things that start by themselves ----------------------------------------
 _dd_head "Things that start by themselves"
 local cron_jobs keys name item
-local -a startup=()
+local -a startup=() units=()
+local units_failed=false
 cron_jobs=$(crontab -l 2>/dev/null | command grep -cvE '^[[:space:]]*(#|$)')
 _dd_fact cron user-jobs "$cron_jobs"
 if (( cron_jobs > 0 )); then
@@ -72,10 +77,15 @@ case "$DD_OS" in
             _dd_fact autostart "${item:t}" present
         done
         if (( $+commands[systemctl] )); then
-            local -a units=(${(f)"$(systemctl --user list-unit-files --state=enabled --no-legend 2>/dev/null | awk '{print $1}')"})
-            for name in "${units[@]}"; do
-                [[ -n "$name" ]] && _dd_fact systemd-user "$name" enabled
-            done
+            local unit_out
+            if unit_out=$(systemctl --user list-unit-files --state=enabled --no-legend 2>/dev/null); then
+                units=(${(f)"$(print -r -- "$unit_out" | awk '{print $1}')"})
+                for name in "${units[@]}"; do
+                    [[ -n "$name" ]] && _dd_fact systemd-user "$name" enabled
+                done
+            else
+                units_failed=true
+            fi
         fi
         ;;
 esac
@@ -85,6 +95,11 @@ if (( $#startup )); then
     _dd_warn "start-up items: ${(j:, :)startup_names} (review each)"
 else
     _dd_ok "start-up items (launchd or autostart): none"
+fi
+if [[ "$units_failed" == true ]]; then
+    _dd_warn "systemd user units: could not check (systemctl --user failed)"
+elif (( $#units )); then
+    [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} systemd user units enabled: %s\n" "$(_dd_clean "${(j:, :)units}")"
 fi
 
 # Libraries the loader injects into every program.
@@ -119,14 +134,15 @@ fi
 # Shell start-up files that download and run something, or decode and run it.
 local -a rc_files hooks
 local hook rc text
-for rc in ~/.zshenv(N) ~/.zprofile(N) ~/.zshrc(N) ~/.profile(N) ~/.bashrc(N) ~/.bash_profile(N); do
+for rc in ~/.zshenv(N) ~/.zprofile(N) ~/.zshrc(N) ~/.zlogin(N) ~/.profile(N) ~/.bashrc(N) ~/.bash_profile(N); do
     _dd_in_trash "$rc" || rc_files+=("$rc")
 done
 if (( $#rc_files )); then
     # -H: always print the file name, also when only one file is searched.
     # The last alternatives: eval "$(curl ...)", source <(curl ...), and bash or sh
     # with <(curl ...) or -c "$(curl ...)". wget counts the same as curl.
-    hooks=(${(f)"$(command grep -HnE 'curl[^|]*\|[[:space:]]*(ba|z)?sh|wget[^|]*\|[[:space:]]*(ba|z)?sh|base64 +(-d|-D|--decode)|/dev/tcp/|(^|[^[:alnum:]_])eval[[:space:]]+"?\$\((curl|wget)|(^|[^[:alnum:]_])(source|\.)[[:space:]]+<\((curl|wget)|(^|[^[:alnum:]_])(ba|z)?sh[[:space:]]+(<\(|-c[[:space:]]+"?\$\()(curl|wget)' -- "${rc_files[@]}" 2>/dev/null)"})
+    local pipe_sh='\|[[:space:]]*(sudo[[:space:]]+)?((/usr/bin/)?env[[:space:]]+)?(/[^[:space:]|]*/)?(ba|z)?sh([^[:alnum:]_.-]|$)'
+    hooks=(${(f)"$(command grep -HnE "curl[^|]*$pipe_sh|wget[^|]*$pipe_sh|"'base64 +(-d|-D|--decode)|/dev/tcp/|(^|[^[:alnum:]_])eval[[:space:]]+"?\$\((curl|wget)|(^|[^[:alnum:]_])(source|\.)[[:space:]]+<\((curl|wget)|(^|[^[:alnum:]_])(ba|z)?sh[[:space:]]+(<\(|-c[[:space:]]+"?\$\()(curl|wget)' -- "${rc_files[@]}" 2>/dev/null)"})
 fi
 for hook in "${hooks[@]}"; do
     rc="${hook%%:*}"
@@ -137,7 +153,7 @@ for hook in "${hooks[@]}"; do
 done
 if (( $#hooks )); then
     _dd_fail "shell start-up files download or decode and run code:"
-    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${hooks[@]}"
+    _dd_list "${hooks[@]}"
 else
     _dd_ok "shell start-up files: no download-and-run or decode lines"
 fi
@@ -216,7 +232,7 @@ if (( $+commands[ss] )); then
     if (( $#out_progs )); then
         for oprog in ${(o)out_progs}; do
             oports=(${=out_ports[$oprog]})
-            [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} %s  port(s) %s\n" "$oprog" "${(j:, :)${(@nou)oports}}"
+            [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}-${DD_RST} %s  port(s) %s\n" "$(_dd_clean "$oprog")" "${(j:, :)${(@nou)oports}}"
         done
         [[ "$DD_QUIET" == true ]] || printf "  ${DD_DIM}  A list to read: a program you do not recognise is worth a look. Other users' programs need root to be seen.${DD_RST}\n"
     else
@@ -262,7 +278,7 @@ else
 fi
 if (( $#odd )); then
     _dd_fail "running from a temporary folder (a common place for malware):"
-    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${odd[@]}"
+    _dd_list "${odd[@]}"
 else
     _dd_ok "none runs from a temporary folder ($seen processes checked)"
 fi
@@ -380,7 +396,7 @@ for f in "${suid[@]}"; do
 done
 if (( $#odd_suid )); then
     _dd_warn "setuid files (they run as their owner, usually root):"
-    [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${odd_suid[@]}"
+    _dd_list "${odd_suid[@]}"
 else
     _dd_ok "none in /tmp, /opt, /usr/local, ~/.local or ~/bin (Chromium sandbox ignored)"
 fi
@@ -434,7 +450,7 @@ else
     for dir3 in ${(k)missing_dirs}; do _dd_fact pkg-missing-folder "$dir3" "${missing_dirs[$dir3]}"; done
     if (( n_changed > 0 )); then
         _dd_fail "$n_changed installed file(s) differ from their package (contents changed):"
-        [[ "$DD_QUIET" == true ]] || printf "      %s\n" "${(@)changed_paths[1,10]}"
+        _dd_list "${(@)changed_paths[1,10]}"
     else
         _dd_ok "no installed package file has changed contents"
     fi
