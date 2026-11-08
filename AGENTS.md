@@ -177,6 +177,8 @@ test), and this file (structure, load order, conventions). Docs write the clone 
   `${var/#$HOME/~}` takes a bare `~`. `"${(j:, :)${(nou)arr}}"` joins twice: write `${(@nou)arr}`. `(@ok)` plus `(q)`
   escapes names: keep a plain array and test membership with `(Ie)`.
 - Don't combine `INC_APPEND_HISTORY` with `SHARE_HISTORY`.
+- No U+2190–21FF arrows (`⇡ ⇣ ⇄ →`) in `config/starship*.toml`: Ghostty drew the whole prompt line blank. Use `▲ ▼ »`;
+  the suite checks it. A prompt bug that zsh's output does not show is bisected with test configs in the owner's terminal.
 - Don't make `install.sh` back up or rewrite `~/.zshrc`/`~/.bashrc`; it only appends the loader line if missing.
 - Don't add `editor-config` back (dropped on purpose). Don't commit generated artifacts (`.verify-status-worktree/`,
   caches, `*.log`). Don't run `test/uninstall.sh` unasked.
