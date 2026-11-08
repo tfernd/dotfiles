@@ -1,0 +1,205 @@
+# ============================================================================
+# STARSHIP PROMPT: os+dir, branch/state/status pills, context only when relevant
+# Glyphs are \u escapes (Nerd Font); the file stays plain ASCII.
+# ============================================================================
+format = """
+$os\
+$directory\
+$hostname\
+$git_branch\
+${custom.git_tag}\
+$git_commit\
+$git_state\
+$git_status\
+$python\
+$bun\
+$nodejs\
+$rust\
+$golang\
+$terraform\
+$kubernetes\
+$aws\
+$fill\
+$status\
+$cmd_duration\
+$jobs\
+$time\
+$line_break\
+$sudo\
+$character"""
+
+command_timeout = 500
+
+# --- Left: where am I ---
+[os]
+disabled = false
+style = "bg:#7952b3 fg:#ffffff"
+format = "[](#7952b3)[$symbol ]($style)[](fg:#7952b3 bg:#3a86ff)"
+
+[os.symbols]
+Pop = ""
+Ubuntu = ""
+Debian = ""
+Macos = ""
+Windows = "\U000F0372"
+Linux = "\U000F033D"
+
+[username]
+disabled = true
+
+[hostname]
+ssh_only = true
+style = "bold #e17055"
+format = "[\U000F08C0 $hostname]($style) "
+
+[directory]
+style = "bg:#3a86ff fg:#ffffff"
+format = "[ $path ]($style)[](fg:#3a86ff) "
+truncation_length = 3
+truncation_symbol = "…/"
+truncate_to_repo = true
+
+# --- Git: branch, state and status pills ---
+[git_branch]
+symbol = ""
+truncation_length = 25
+truncation_symbol = "…"
+only_attached = true
+format = "[\ue0b6](fg:#ffbe0b)[$symbol $branch](bold fg:#1e1e2e bg:#ffbe0b)[\ue0b4](fg:#ffbe0b) "
+
+[git_commit]
+only_detached = true
+commit_hash_length = 7
+tag_disabled = true
+tag_symbol = "  "
+format = "[\ue0b6](fg:#00b4d8)[\U000F0718 $hash$tag](bold fg:#1e1e2e bg:#00b4d8)[\ue0b4](fg:#00b4d8) "
+
+[custom.git_tag]
+description = "Release tag on an attached HEAD"
+when = "git describe --tags --exact-match HEAD"
+command = "git describe --tags --exact-match HEAD 2>/dev/null"
+shell = ["sh"]
+format = "[\ue0b6](fg:#6c5ce7)[ $output](bold fg:#ffffff bg:#6c5ce7)[\ue0b4](fg:#6c5ce7) "
+ignore_timeout = true
+
+[git_state]
+format = "[\ue0b6](fg:#ff6b35)[$state( $progress_current/$progress_total)](bold fg:#1e1e2e bg:#ff6b35)[\ue0b4](fg:#ff6b35) "
+rebase = "REBASE"
+merge = "MERGE"
+revert = "REVERT"
+cherry_pick = "PICK"
+bisect = "BISECT"
+am = "AM"
+am_or_rebase = "AM/REBASE"
+
+[git_status]
+ignore_submodules = true
+format = "([\ue0b6](fg:#3b4261)[ ](bg:#3b4261)$all_status$ahead_behind[\ue0b4](fg:#3b4261) )"
+conflicted = "[=$count ](bold fg:#ff6b6b bg:#3b4261)"
+staged = "[+$count ](bold fg:#5ce1a0 bg:#3b4261)"
+modified = "[~$count ](bold fg:#ffd166 bg:#3b4261)"
+untracked = "[?$count ](bold fg:#4cc9f0 bg:#3b4261)"
+deleted = "[-$count ](bold fg:#ff6b6b bg:#3b4261)"
+renamed = "[»$count ](bold fg:#c77dff bg:#3b4261)"
+typechanged = ""
+stashed = "[*$count ](bold fg:#adb5bd bg:#3b4261)"
+ahead = "[⇡$count ](bold fg:#5ce1a0 bg:#3b4261)"
+behind = "[⇣$count ](bold fg:#ff6b6b bg:#3b4261)"
+diverged = "[⇡$ahead_count⇣$behind_count ](bold fg:#ffd166 bg:#3b4261)"
+
+[git_metrics]
+disabled = true
+
+# --- Context: each shows only when it applies ---
+[python]
+symbol = " "
+style = "#4b8bbe"
+python_binary = [".venv/bin/python", "python", "python3"]
+format = '[$symbol$version( \($virtualenv\))]($style) '
+
+[bun]
+symbol = "\U000F06E6 "
+style = "#fbf0df"
+format = "[$symbol$version]($style) "
+
+[nodejs]
+symbol = " "
+style = "#68a063"
+format = "[$symbol$version]($style) "
+
+[rust]
+symbol = " "
+style = "#dea584"
+format = "[$symbol$version]($style) "
+
+[golang]
+symbol = " "
+style = "#00add8"
+format = "[$symbol$version]($style) "
+
+[terraform]
+disabled = false
+symbol = "\U000F1062 "
+style = "#844fba"
+format = "[$symbol$workspace]($style) "
+
+[kubernetes]
+disabled = false
+symbol = "\U000F10FE "
+style = "#326ce5"
+detect_files = ["Chart.yaml", "kustomization.yaml", "skaffold.yaml"]
+detect_folders = ["k8s", "helm"]
+format = '[$symbol$context( \($namespace\))]($style) '
+
+[aws]
+symbol = " "
+style = "#ff9900"
+format = '[$symbol$profile( \($region\))]($style) '
+
+[gcloud]
+disabled = true
+
+[package]
+disabled = true
+
+[battery]
+disabled = true
+
+[memory_usage]
+disabled = true
+
+# --- Right (after $fill): failure, slow command, jobs, clock ---
+[status]
+disabled = false
+symbol = "✘"
+map_symbol = false
+pipestatus = false
+format = "[\ue0b6](fg:#ff5370)[$symbol $status](bold fg:#ffffff bg:#ff5370)[\ue0b4](fg:#ff5370) "
+
+[cmd_duration]
+min_time = 3000
+format = "[\ue0b6](fg:#ffcb6b)[\U000F13AB $duration](bold fg:#1e1e2e bg:#ffcb6b)[\ue0b4](fg:#ffcb6b) "
+
+[jobs]
+symbol = "✦"
+format = "[\ue0b6](fg:#c792ea)[$symbol$number](bold fg:#1e1e2e bg:#c792ea)[\ue0b4](fg:#c792ea) "
+
+[time]
+disabled = false
+time_format = "%R"
+format = "[\ue0b6](fg:#3b4261)[\U000F0954 $time](bold fg:#a9b1d6 bg:#3b4261)[\ue0b4](fg:#3b4261) "
+
+# --- Line 2 ---
+[sudo]
+disabled = false
+symbol = "\U000F033E"
+style = "bold #d63031"
+format = "[$symbol ]($style)"
+
+[character]
+success_symbol = "[➜](bold #38b000)"
+error_symbol = "[➜](bold #d63031)"
+
+
+[fill]
+symbol = " "
